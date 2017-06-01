@@ -17,7 +17,7 @@ class Chain {
     let eventhub;
     if (options.eventUrl) {
       eventhub = new EventHub(enrollObj.client);
-      eventhub.setPeerAddr(options.eventUrl);
+      eventhub.setPeerAddr(options.eventUrl, {pem: options.peers[0].pem, 'ssl-target-name-override': options.peers[0].sslTargetNameOverride});
       eventhub.connect();
     }
 

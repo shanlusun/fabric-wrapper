@@ -4,7 +4,7 @@ const fs = require('fs');
 (async function () {
   const chain = await getChain();
 
-  const tx = fs.readFileSync(__dirname + '/channel/channel_ttl.tx');
+  const tx = fs.readFileSync(__dirname + '/channel/channel-artifacts/channel_ttl.tx');
   console.log('Create channel: ', await chain.createChannel('ttl', tx));
 
   await new Promise(resolve => setTimeout(resolve, 2000));
