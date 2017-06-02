@@ -7,6 +7,7 @@ const User = require('fabric-client/lib/User.js');
 const CaService = require('fabric-ca-client/lib/FabricCAClientImpl.js');
 const jsrsa = require('jsrsasign');
 const KEYUTIL = jsrsa.KEYUTIL;
+const fs = require('fs');
 
 const EcdsaKey = rewire('fabric-client/lib/impl/ecdsa/key');
 EcdsaKey.__set__('KEYUTIL', KEYUTIL); // Fix KEYUTIL issue.
@@ -71,12 +72,15 @@ module.exports = async function (options) {
   client.setStateStore(store);
   const submitter = await getSubmitter(client, options);
   const ordererOpts = {
-      pem: options.orderer.pem,
+      pem: fs.readFileSync(options.orderer.pemPath, 'utf8'),
       'ssl-target-name-override': options.orderer.sslTargetNameOverride
   };
   chain.addOrderer(new Orderer(options.orderer.url, ordererOpts)); // enable tls
 
-  const peers = options.peers.map(peer => new Peer(peer.url, {pem: peer.pem, 'ssl-target-name-override': peer.sslTargetNameOverride})); // enable tls
+  const peers = options.peers.map(peer => new Peer(peer.url, {
+                                                               pem: fs.readFileSync(peer.pemPath, 'utf8'),
+                                                               'ssl-target-name-override': peer.sslTargetNameOverride
+                                                              })); // enable tls
   for (const peer of peers) {
     chain.addPeer(peer);
   }

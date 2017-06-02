@@ -1,5 +1,4 @@
 const fabric = require('../');
-const fs = require('fs');
 
 // Must be Admin role: crypto-config\peerOrganizations\org1.example.com\users\Admin@org1.example.com\msp\keystore
 const key =
@@ -26,8 +25,6 @@ CCqGSM49BAMCA0cAMEQCIBUCwpGxUXOHjuVSxbL4TSrA5N+/FK3+K9F5T7y/2/KI
 AiAcZZSSbAtmt5UsrrnFQ7ET44r5bNlpuiOAXyypiviBCQ==
 -----END CERTIFICATE-----`;
 
-const pemPeer0 = fs.readFileSync('channel/crypto-config/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt', 'utf8');
-const pemOrderer = fs.readFileSync('channel/crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/ca.crt', 'utf8');
 
 async function fromCert() {
   console.log('Enroll with cert.');
@@ -43,13 +40,13 @@ async function fromCert() {
       channelId: 'ttl',
       orderer: {
         url: 'grpcs://localhost:7050',
-        pem: pemOrderer,
+        pemPath: 'channel/crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/ca.crt',
         sslTargetNameOverride: 'orderer.example.com'
       },
       peers: [
         {
             url: 'grpcs://localhost:7051',
-            pem: pemPeer0,
+            pemPath: 'channel/crypto-config/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt',
             sslTargetNameOverride: 'peer0.org1.example.com'
         }
       ],
@@ -73,13 +70,13 @@ async function fromCa() {
       channelId: 'ttl',
       orderer: {
           url: 'grpcs://localhost:7050',
-          pem: pemOrderer,
+          pemPath: 'channel/crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/ca.crt',
           sslTargetNameOverride: 'orderer.example.com'
       },
       peers: [
           {
               url: 'grpcs://localhost:7051',
-              pem: pemPeer0,
+              pemPath: 'channel/crypto-config/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt',
               sslTargetNameOverride: 'peer0.org1.example.com'
           }
       ],

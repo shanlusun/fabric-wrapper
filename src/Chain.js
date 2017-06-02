@@ -17,7 +17,10 @@ class Chain {
     let eventhub;
     if (options.eventUrl) {
       eventhub = new EventHub(enrollObj.client);
-      eventhub.setPeerAddr(options.eventUrl, {pem: options.peers[0].pem, 'ssl-target-name-override': options.peers[0].sslTargetNameOverride}); // enable tls
+      eventhub.setPeerAddr(options.eventUrl, {
+                                               pem: fs.readFileSync(options.peers[0].pemPath, 'utf8'),
+                                               'ssl-target-name-override': options.peers[0].sslTargetNameOverride
+                                              }); // enable tls
       eventhub.connect();
     }
 
