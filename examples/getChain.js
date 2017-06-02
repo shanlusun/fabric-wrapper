@@ -1,7 +1,7 @@
 const fabric = require('../');
 const fs = require('fs');
 
-// from crypto-config\peerOrganizations\org1.example.com\users\Admin@org1.example.com\msp\keystore
+// Must be Admin role: crypto-config\peerOrganizations\org1.example.com\users\Admin@org1.example.com\msp\keystore
 const key =
 `-----BEGIN PRIVATE KEY-----
 MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgkJ20fKXCkH62sGL5
@@ -9,7 +9,7 @@ V9l144ypEBIcpUYar0rIXOGeByGhRANCAASuwfO10R6M99UthHtneOgZ6Fc6U7cP
 azUotTQklx0WzfwwuF+SGn1kkVp+Sm3CC7gZ9jXKVNs38ACetqI4z5yv
 -----END PRIVATE KEY-----`;
 
-// from crypto-config\peerOrganizations\org1.example.com\users\Admin@org1.example.com\msp\signcerts
+// Must be Admin role: crypto-config\peerOrganizations\org1.example.com\users\Admin@org1.example.com\msp\signcerts
 const cert =
 `-----BEGIN CERTIFICATE-----
 MIICLjCCAdWgAwIBAgIRAJw1zfWT+j/sW1JCAvQghkIwCgYIKoZIzj0EAwIwczEL

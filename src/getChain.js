@@ -74,7 +74,7 @@ module.exports = async function (options) {
       pem: options.orderer.pem,
       'ssl-target-name-override': options.orderer.sslTargetNameOverride
   };
-  chain.addOrderer(new Orderer(options.orderer.url, ordererOpts));
+  chain.addOrderer(new Orderer(options.orderer.url, ordererOpts)); // enable tls
 
   const peers = options.peers.map(peer => new Peer(peer.url, {pem: peer.pem, 'ssl-target-name-override': peer.sslTargetNameOverride})); // enable tls
   for (const peer of peers) {

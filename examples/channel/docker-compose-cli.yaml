@@ -23,6 +23,8 @@ services:
       service: peer0.org1.example.com
 
 
+  # cli is used to test the network with scripts/script.sh
+  # run './scripts/script.sh ttl'' in cli container
   cli:
     container_name: cli
     image: hyperledger/fabric-peer
@@ -45,6 +47,8 @@ services:
         - /var/run/:/host/var/run/
         - ./crypto-config:/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/
         - ./channel-artifacts:/opt/gopath/src/github.com/hyperledger/fabric/peer/channel-artifacts
+        - ./examples:/opt/gopath/src/github.com/hyperledger/fabric/examples
+        - ./scripts:/opt/gopath/src/github.com/hyperledger/fabric/peer/scripts/
     depends_on:
       - orderer.example.com
       - peer0.org1.example.com

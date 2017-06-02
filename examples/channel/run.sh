@@ -1,11 +1,11 @@
 
-channel=mychannel
+channel=ttl
 
 CHANNEL_NAME=$channel TIMEOUT=100000 docker-compose -f docker-compose-cli.yaml down
 
 DOCKER_IMAGE_IDS=$(docker images | grep "dev\|none\|test-vp\|peer[0-9]-" | awk '{print $3}')
 docker rmi -f $DOCKER_IMAGE_IDS
 
-./generateArtifacts.sh $channel
+#./generateArtifacts.sh $channel
 
 CHANNEL_NAME=$channel TIMEOUT=10000 docker-compose -f docker-compose-cli.yaml up -d 2>&1
