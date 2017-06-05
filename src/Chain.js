@@ -246,9 +246,9 @@ class Chain {
     const { nonce, txId } = this.buildTransactionID();
     const request = {
       targets : this.chain.getPeers(),
-      block: await this.getGenesisBlock(),
-      txId : 	txId,
-      nonce : nonce
+      block,
+      txId,
+      nonce
     };
 
     return await this.chain.joinChannel(request);
