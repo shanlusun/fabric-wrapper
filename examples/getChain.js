@@ -1,46 +1,30 @@
 const fabric = require('../');
 
+// Must be Admin role: crypto-config\peerOrganizations\org1.example.com\users\Admin@org1.example.com\msp\keystore
 const key =
-  `-----BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgCxbAW6cTOrPVGHqe
-8PgyI+QoK2ajHOHeNOq4bkxJt4uhRANCAAQcG4qwA7jeGzgkakV+IYyQH/GwgtOw
-6+Y3ZabCmw8dk0vrDwdZ7fEI9C10b9ckm9n4LvnooSxQEzfLDk9N+S7y
+    `-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgkJ20fKXCkH62sGL5
+V9l144ypEBIcpUYar0rIXOGeByGhRANCAASuwfO10R6M99UthHtneOgZ6Fc6U7cP
+azUotTQklx0WzfwwuF+SGn1kkVp+Sm3CC7gZ9jXKVNs38ACetqI4z5yv
 -----END PRIVATE KEY-----`;
 
+// Must be Admin role: crypto-config\peerOrganizations\org1.example.com\users\Admin@org1.example.com\msp\signcerts
 const cert =
-  `-----BEGIN CERTIFICATE-----
-MIICjDCCAjKgAwIBAgIUBEVwsSx0TmqdbzNwleNBBzoIT0wwCgYIKoZIzj0EAwIw
-fzELMAkGA1UEBhMCVVMxEzARBgNVBAgTCkNhbGlmb3JuaWExFjAUBgNVBAcTDVNh
-biBGcmFuY2lzY28xHzAdBgNVBAoTFkludGVybmV0IFdpZGdldHMsIEluYy4xDDAK
-BgNVBAsTA1dXVzEUMBIGA1UEAxMLZXhhbXBsZS5jb20wHhcNMTYxMTExMTcwNzAw
-WhcNMTcxMTExMTcwNzAwWjBjMQswCQYDVQQGEwJVUzEXMBUGA1UECBMOTm9ydGgg
-Q2Fyb2xpbmExEDAOBgNVBAcTB1JhbGVpZ2gxGzAZBgNVBAoTEkh5cGVybGVkZ2Vy
-IEZhYnJpYzEMMAoGA1UECxMDQ09QMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE
-HBuKsAO43hs4JGpFfiGMkB/xsILTsOvmN2WmwpsPHZNL6w8HWe3xCPQtdG/XJJvZ
-+C756KEsUBM3yw5PTfku8qOBpzCBpDAOBgNVHQ8BAf8EBAMCBaAwHQYDVR0lBBYw
-FAYIKwYBBQUHAwEGCCsGAQUFBwMCMAwGA1UdEwEB/wQCMAAwHQYDVR0OBBYEFOFC
-dcUZ4es3ltiCgAVDoyLfVpPIMB8GA1UdIwQYMBaAFBdnQj2qnoI/xMUdn1vDmdG1
-nEgQMCUGA1UdEQQeMByCCm15aG9zdC5jb22CDnd3dy5teWhvc3QuY29tMAoGCCqG
-SM49BAMCA0gAMEUCIDf9Hbl4xn3z4EwNKmilM9lX2Fq4jWpAaRVB97OmVEeyAiEA
-25aDPQHGGq2AvhKT0wvt08cX1GTGCIbfmuLpMwKQj38=
+    `-----BEGIN CERTIFICATE-----
+MIICLjCCAdWgAwIBAgIRAJw1zfWT+j/sW1JCAvQghkIwCgYIKoZIzj0EAwIwczEL
+MAkGA1UEBhMCVVMxEzARBgNVBAgTCkNhbGlmb3JuaWExFjAUBgNVBAcTDVNhbiBG
+cmFuY2lzY28xGTAXBgNVBAoTEG9yZzEuZXhhbXBsZS5jb20xHDAaBgNVBAMTE2Nh
+Lm9yZzEuZXhhbXBsZS5jb20wHhcNMTcwNjAxMTEyNzU0WhcNMjcwNTMwMTEyNzU0
+WjBbMQswCQYDVQQGEwJVUzETMBEGA1UECBMKQ2FsaWZvcm5pYTEWMBQGA1UEBxMN
+U2FuIEZyYW5jaXNjbzEfMB0GA1UEAwwWQWRtaW5Ab3JnMS5leGFtcGxlLmNvbTBZ
+MBMGByqGSM49AgEGCCqGSM49AwEHA0IABK7B87XRHoz31S2Ee2d46BnoVzpTtw9r
+NSi1NCSXHRbN/DC4X5IafWSRWn5KbcILuBn2NcpU2zfwAJ62ojjPnK+jYjBgMA4G
+A1UdDwEB/wQEAwIFoDATBgNVHSUEDDAKBggrBgEFBQcDATAMBgNVHRMBAf8EAjAA
+MCsGA1UdIwQkMCKAIPK0VS0NhtH0vYEC5prOcc9+7N6nIRpJZFQTuUFGPTOhMAoG
+CCqGSM49BAMCA0cAMEQCIBUCwpGxUXOHjuVSxbL4TSrA5N+/FK3+K9F5T7y/2/KI
+AiAcZZSSbAtmt5UsrrnFQ7ET44r5bNlpuiOAXyypiviBCQ==
 -----END CERTIFICATE-----`;
 
-const caCert =
-`-----BEGIN CERTIFICATE-----
-MIICYjCCAgmgAwIBAgIUB3CTDOU47sUC5K4kn/Caqnh114YwCgYIKoZIzj0EAwIw
-fzELMAkGA1UEBhMCVVMxEzARBgNVBAgTCkNhbGlmb3JuaWExFjAUBgNVBAcTDVNh
-biBGcmFuY2lzY28xHzAdBgNVBAoTFkludGVybmV0IFdpZGdldHMsIEluYy4xDDAK
-BgNVBAsTA1dXVzEUMBIGA1UEAxMLZXhhbXBsZS5jb20wHhcNMTYxMDEyMTkzMTAw
-WhcNMjExMDExMTkzMTAwWjB/MQswCQYDVQQGEwJVUzETMBEGA1UECBMKQ2FsaWZv
-cm5pYTEWMBQGA1UEBxMNU2FuIEZyYW5jaXNjbzEfMB0GA1UEChMWSW50ZXJuZXQg
-V2lkZ2V0cywgSW5jLjEMMAoGA1UECxMDV1dXMRQwEgYDVQQDEwtleGFtcGxlLmNv
-bTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABKIH5b2JaSmqiQXHyqC+cmknICcF
-i5AddVjsQizDV6uZ4v6s+PWiJyzfA/rTtMvYAPq/yeEHpBUB1j053mxnpMujYzBh
-MA4GA1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBQXZ0I9
-qp6CP8TFHZ9bw5nRtZxIEDAfBgNVHSMEGDAWgBQXZ0I9qp6CP8TFHZ9bw5nRtZxI
-EDAKBggqhkjOPQQDAgNHADBEAiAHp5Rbp9Em1G/UmKn8WsCbqDfWecVbZPQj3RK4
-oG5kQQIgQAe4OOKYhJdh3f7URaKfGTf492/nmRmtK+ySKjpHSrU=
------END CERTIFICATE-----`;
 
 // process.env.USE_TLS = true;
 const protocol = process.env.USE_TLS ? 'grpcs' : 'grpc';
@@ -59,18 +43,23 @@ async function fromCert() {
       channelId: 'ttl',
       orderer: {
         url: `${protocol}://localhost:7050`,
-        pem: process.env.USE_TLS && caCert,
-        sslTargetNameOverride: 'orderer'
+        pemPath: process.env.USE_TLS && "docker-compose-couch/crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/ca.crt",
+        sslTargetNameOverride: 'orderer.example.com'
       },
       peers: [
         {
           url: `${protocol}://localhost:7051`,
           eventUrl: `${protocol}://localhost:7053`,
-          pem: process.env.USE_TLS && caCert,
-          sslTargetNameOverride: 'peer'
-        }
+          pemPath: process.env.USE_TLS && "docker-compose-couch/crypto-config/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt",
+          sslTargetNameOverride: 'peer0.org1.example.com'
+        },
+          {
+              url: `${protocol}://localhost:8051`,
+              pemPath: process.env.USE_TLS && "docker-compose-couch/crypto-config/peerOrganizations/org1.example.com/peers/peer1.org1.example.com/tls/ca.crt",
+              sslTargetNameOverride: 'peer1.org1.example.com'
+          }
       ],
-      mspId: 'DEFAULT'
+      mspId: 'Org1MSP'
     }
   );
 }
@@ -87,21 +76,26 @@ async function fromCa() {
       },
       uuid:'test',
       channelId: 'ttl',
-      orderer: {
-        url: `${protocol}://localhost:7050`,
-        pem: process.env.USE_TLS && ca,
-        sslTargetNameOverride: 'orderer'
-      },
-      peers: [
-        {
-          url: `${protocol}://localhost:7051`,
-          eventUrl: `${protocol}://localhost:7053`,
-          pem: process.env.USE_TLS && ca,
-          sslTargetNameOverride: 'peer'
-        }
-      ],
+        orderer: {
+            url: `${protocol}://localhost:7050`,
+            pemPath: process.env.USE_TLS && "docker-compose-couch/crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/ca.crt",
+            sslTargetNameOverride: 'orderer.example.com'
+        },
+        peers: [
+            {
+                url: `${protocol}://localhost:7051`,
+                eventUrl: `${protocol}://localhost:7053`,
+                pemPath: process.env.USE_TLS && "examples/docker-compose-couch/crypto-config/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt",
+                sslTargetNameOverride: 'peer0.org1.example.com'
+            },
+            {
+                url: `${protocol}://localhost:8051`,
+                pemPath: process.env.USE_TLS && "examples/docker-compose-couch/crypto-config/peerOrganizations/org1.example.com/peers/peer1.org1.example.com/tls/ca.crt",
+                sslTargetNameOverride: 'peer1.org1.example.com'
+            }
+        ],
       caUrl: 'http://localhost:7054',
-      mspId: 'DEFAULT'
+      mspId: 'Org1MSP'
     }
   )
 }

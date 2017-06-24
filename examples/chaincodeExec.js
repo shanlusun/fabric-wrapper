@@ -17,12 +17,12 @@ const getChain = require('./getChain');
     chain.invokeChaincode({
       name: 'fcw_example',
       fcn: 'write',
-      args: ['ab', '300']
+      args: ['ab', JSON.stringify({ a: 2 })]
     }),
     chain.invokeChaincode({
       name: 'fcw_example',
       fcn: 'write',
-      args: ['bc', '100']
+      args: ['bc', JSON.stringify({ a: { '$inc': 100 }, b:"hello"})]
     })
   ]);
   console.log(await executeResult);
@@ -39,6 +39,13 @@ const getChain = require('./getChain');
     name: 'fcw_example',
     fcn: 'read',
     args: ['bc']
+  })).map(b => b.toString()));
+
+  console.log('Query from ledger: ');
+  console.log((await chain.queryByChaincode({
+      name: 'fcw_example',
+      fcn: 'query',
+      args: [JSON.stringify({ selector:{ a: 2 }})]
   })).map(b => b.toString()));
 
 })();

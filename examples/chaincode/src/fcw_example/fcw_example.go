@@ -1,6 +1,7 @@
 package main
 
 import (
+    "bytes"
 	"errors"
 	"fmt"
 	"strconv"
@@ -25,7 +26,9 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 		return t.write(stub, args)
 	} else if function == "read" {            //generic read ledger
 		return t.read(stub, args)
-	}
+	} else if function == "query" {           //query ledger with complex JSON query string
+        return t.query(stub, args)
+    }
 
 	// error out
 	fmt.Println("Received unknown invoke function name - " + function)
@@ -74,10 +77,10 @@ func (t *SimpleChaincode) write(stub shim.ChaincodeStubInterface, args []string)
 	}
 
 	// input sanitation
-	err = sanitize_arguments(args)
-	if err != nil {
-		return shim.Error(err.Error())
-	}
+	// err = sanitize_arguments(args)
+	// if err != nil {
+	// 	return shim.Error(err.Error())
+	// }
 
 	name = args[0]                                   //rename for funsies
 	value = args[1]
@@ -103,10 +106,10 @@ func (t *SimpleChaincode) read(stub shim.ChaincodeStubInterface, args []string) 
 	}
 
 	// input sanitation
-	err = sanitize_arguments(args)
-	if err != nil {
-		return shim.Error(err.Error())
-	}
+	// err = sanitize_arguments(args)
+	// if err != nil {
+	// 	return shim.Error(err.Error())
+	// }
 
 	name = args[0]
 	valAsbytes, err := stub.GetState(name)           //get the var from ledger
@@ -117,6 +120,71 @@ func (t *SimpleChaincode) read(stub shim.ChaincodeStubInterface, args []string) 
 
 	fmt.Println("- end read")
 	return shim.Success(valAsbytes)                  //send it onward
+}
+
+// ============================================================================================================================
+// Query - query a generic variable from ledger with complex query string in JSON format.
+// ============================================================================================================================
+func (t *SimpleChaincode) query(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	var err error
+	fmt.Println("starting query")
+
+	if len(args) != 1 {
+		return shim.Error("Incorrect number of arguments. Expecting query string of JSON to query")
+	}
+
+	queryString := args[0]
+    queryResults, err := getQueryResultForQueryString(stub, queryString)
+    if err != nil {
+        return shim.Error(err.Error())
+    }
+    return shim.Success(queryResults)
+}
+
+// =========================================================================================
+// getQueryResultForQueryString executes the passed in query string.
+// Result set is built and returned as a byte array containing the JSON results.
+// =========================================================================================
+func getQueryResultForQueryString(stub shim.ChaincodeStubInterface, queryString string) ([]byte, error) {
+
+	fmt.Printf("- getQueryResultForQueryString queryString:\n%s\n", queryString)
+
+	resultsIterator, err := stub.GetQueryResult(queryString)
+	if err != nil {
+		return nil, err
+	}
+	defer resultsIterator.Close()
+
+	// buffer is a JSON array containing QueryRecords
+	var buffer bytes.Buffer
+	buffer.WriteString("[")
+
+	bArrayMemberAlreadyWritten := false
+	for resultsIterator.HasNext() {
+		queryResponse, err := resultsIterator.Next()
+		if err != nil {
+			return nil, err
+		}
+		// Add a comma before array members, suppress it for the first array member
+		if bArrayMemberAlreadyWritten == true {
+			buffer.WriteString(",")
+		}
+		buffer.WriteString("{\"Key\":")
+		buffer.WriteString("\"")
+		buffer.WriteString(queryResponse.Key)
+		buffer.WriteString("\"")
+
+		buffer.WriteString(", \"Record\":")
+		// Record is a JSON object, so we write as-is
+		buffer.WriteString(string(queryResponse.Value))
+		buffer.WriteString("}")
+		bArrayMemberAlreadyWritten = true
+	}
+	buffer.WriteString("]")
+
+	fmt.Printf("- getQueryResultForQueryString queryResult:\n%s\n", buffer.String())
+
+	return buffer.Bytes(), nil
 }
 
 // ========================================================
