@@ -150,13 +150,8 @@ func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string
 	// ==== Input sanitation ====
 	// ORG_REGISTER will only happen when the peer first time try to start a transaction(like uploading new file)
 	// SDK client should try to do ORG_REGISTER when starts, if the ORG_REGISTER is already done before, nothing will be happen here.
-	//TODO: change to switch with fewer functions
-	//emptyQueryResults := []byte("[]")
-	var buffer bytes.Buffer
-	buffer.WriteString("[")
-	buffer.WriteString("]")
-	emptyQueryResults := buffer.Bytes()
 
+	emptyQueryResults := []byte("[]")
 	if operationType == "ORG_REGISTER" {
 		//-----only 1 parameter------
 		// 		0
@@ -274,7 +269,7 @@ func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string
 
 		bloomURI := strings.ToLower(args[7])
 
-		////targetOwner should not be the same as owner
+		//TODO://targetOwner should not be the same as owner
 		//if ownerId == targetOwner {
 		//	return shim.Error("The targetOwner should not be the same as current owner.")
 		//}
@@ -289,7 +284,6 @@ func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string
 				return shim.Error(err.Error())
 			}
 			if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
-				//TODO:test
 				fmt.Sprintf("Current owner:%s has not registered yet, please do ORG_REGISTER first.\n", ownerId)
 				return shim.Error(fmt.Sprintf("Current owner:%s has not registered yet, please do ORG_REGISTER first.", ownerId))
 			}
@@ -299,7 +293,6 @@ func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string
 				return shim.Error(err.Error())
 			}
 			if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
-				//TODO:test
 				fmt.Sprintf("targetOwner:%s has not registered yet, please do ORG_REGISTER first.\n", targetOwner)
 				return shim.Error(fmt.Sprintf("targetOwner:%s has not registered yet, please do ORG_REGISTER first.", targetOwner))
 			}
@@ -310,7 +303,6 @@ func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string
 				return shim.Error(err.Error())
 			}
 			if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
-				//TODO:test
 				fmt.Sprintf("Current owner:%s doesn't have data:%s yet, please do DATA_REGISTER for this data first.\n", ownerId, dataName)
 				return shim.Error(fmt.Sprintf("Current owner:%s doesn't have data:%s yet, please do DATA_REGISTER for this data first.", ownerId, dataName))
 			}
@@ -319,10 +311,8 @@ func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string
 			if err != nil {
 				return shim.Error(err.Error())
 			}
-			//TODO: test
-			fmt.Printf("emptyQueryResults len is: %d, hex: %x\n", len(emptyQueryResults), emptyQueryResults)
+
 			if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
-				//TODO: test
 				fmt.Sprintf("The targetOwner:%s doesn't have data:%s yet, please double check.\n", targetOwner, targetDataName)
 				return shim.Error(fmt.Sprintf("The targetOwner:%s doesn't have data:%s yet, please double check.", targetOwner, targetDataName))
 			}
@@ -522,7 +512,7 @@ func queryByStepAndOperationType(stub shim.ChaincodeStubInterface,
 								 dataName string,
                                  targetOwner string,
                                  targetDataName string) ([]byte, error) {
-	//var err error
+	var err error
 	fmt.Println("starting queryByDataAndOperationType")
 
 	if len(operationType) == 0 {
@@ -554,6 +544,7 @@ func queryByStepAndOperationType(stub shim.ChaincodeStubInterface,
 	if err != nil {
 		return nil, err
 	}
+
 	fmt.Printf("- queryByStepAndOperationType queryResult:\n%s\n", queryResponse.Value)
 	return queryResponse.Value, nil
 }
@@ -599,7 +590,7 @@ func getQueryResultForQueryString(stub shim.ChaincodeStubInterface, queryString 
 	}
 	buffer.WriteString("]")
 
-	//fmt.Printf("- getQueryResultForQueryString queryResult:\n%s\n", buffer.String())
+	fmt.Printf("- getQueryResultForQueryString queryResult:\n%s\n", buffer.String())
 	return buffer.Bytes(), nil
 }
 
@@ -687,11 +678,8 @@ func getOrgNameAndCommonName(idBytes []byte) (string, string, error) {
 	} else {
 		orgName = orgNameArray[0]
 	}
-	fmt.Printf("orgName:%s\n", orgName)
 
 	commonName := cert.Subject.CommonName
-	fmt.Printf("commonName:%s\n", commonName)
-
 	if orgName == "" && commonName == "" {
 		return "", "", errors.New("Both orgName amd commonName are empty.")
 	}
