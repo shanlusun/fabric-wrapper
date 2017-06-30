@@ -151,6 +151,12 @@ func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string
 	// ORG_REGISTER will only happen when the peer first time try to start a transaction(like uploading new file)
 	// SDK client should try to do ORG_REGISTER when starts, if the ORG_REGISTER is already done before, nothing will be happen here.
 	//TODO: change to switch with fewer functions
+	//emptyQueryResults := []byte("[]")
+	var buffer bytes.Buffer
+	buffer.WriteString("[")
+	buffer.WriteString("]")
+	emptyQueryResults := buffer.Bytes()
+
 	if operationType == "ORG_REGISTER" {
 		//-----only 1 parameter------
 		// 		0
@@ -165,7 +171,8 @@ func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string
 		if err != nil {
 			return shim.Error(err.Error())
 		}
-		if len(queryResults) > 0 {
+		if bytes.Equal(queryResults[:], emptyQueryResults[:]) == false {
+			fmt.Printf("Already did ORG_REGISTER:%s\n", queryResults)
 			return shim.Success(queryResults)
 		}
 
@@ -210,7 +217,8 @@ func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string
 		if err != nil {
 			return shim.Error(err.Error())
 		}
-		if len(queryResults) > 0 {
+		if bytes.Equal(queryResults[:], emptyQueryResults[:]) == false {
+			fmt.Printf("Already did DATA_REGISTER:%s\n", queryResults)
 			return shim.Success(queryResults)
 		}
 
@@ -266,10 +274,10 @@ func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string
 
 		bloomURI := strings.ToLower(args[7])
 
-		//targetOwner should not be the same as owner
-		if ownerId == targetOwner {
-			return shim.Error("The targetOwner should not be the same as current owner.")
-		}
+		////targetOwner should not be the same as owner
+		//if ownerId == targetOwner {
+		//	return shim.Error("The targetOwner should not be the same as current owner.")
+		//}
 
 		var txID string
 		if step == 1 {
@@ -280,7 +288,9 @@ func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string
 			if err != nil {
 				return shim.Error(err.Error())
 			}
-			if len(queryResults) == 0 {
+			if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
+				//TODO:test
+				fmt.Sprintf("Current owner:%s has not registered yet, please do ORG_REGISTER first.\n", ownerId)
 				return shim.Error(fmt.Sprintf("Current owner:%s has not registered yet, please do ORG_REGISTER first.", ownerId))
 			}
 
@@ -288,7 +298,9 @@ func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string
 			if err != nil {
 				return shim.Error(err.Error())
 			}
-			if len(queryResults) == 0 {
+			if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
+				//TODO:test
+				fmt.Sprintf("targetOwner:%s has not registered yet, please do ORG_REGISTER first.\n", targetOwner)
 				return shim.Error(fmt.Sprintf("targetOwner:%s has not registered yet, please do ORG_REGISTER first.", targetOwner))
 			}
 
@@ -297,7 +309,9 @@ func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string
 			if err != nil {
 				return shim.Error(err.Error())
 			}
-			if len(queryResults) == 0 {
+			if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
+				//TODO:test
+				fmt.Sprintf("Current owner:%s doesn't have data:%s yet, please do DATA_REGISTER for this data first.\n", ownerId, dataName)
 				return shim.Error(fmt.Sprintf("Current owner:%s doesn't have data:%s yet, please do DATA_REGISTER for this data first.", ownerId, dataName))
 			}
 
@@ -305,15 +319,21 @@ func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string
 			if err != nil {
 				return shim.Error(err.Error())
 			}
-			if len(queryResults) == 0 {
+			//TODO: test
+			fmt.Printf("emptyQueryResults len is: %d, hex: %x\n", len(emptyQueryResults), emptyQueryResults)
+			if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
+				//TODO: test
+				fmt.Sprintf("The targetOwner:%s doesn't have data:%s yet, please double check.\n", targetOwner, targetDataName)
 				return shim.Error(fmt.Sprintf("The targetOwner:%s doesn't have data:%s yet, please double check.", targetOwner, targetDataName))
 			}
 
 			//for step 1, need to check whether the matching for these pair of data ever happened before, if Yes, just return with notice.
+			//define queryResult(but not queryResults), due to queryByStepAndOperationType will return only one single result.
 			queryResult, err := queryByStepAndOperationType(stub, operationType, 1, ownerId, dataName, targetOwner, targetDataName)
 			if err != nil {
 				return shim.Error(err.Error())
 			}
+
 			if queryResult != nil && len(queryResult) > 0 {
 				var dataJSON on_boarding
 				err = json.Unmarshal(queryResult, &dataJSON)
@@ -329,8 +349,8 @@ func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string
 			if err != nil {
 				return shim.Error(err.Error())
 			}
-			if len(queryResult) == 0 || queryResult == nil {
-				return shim.Error(fmt.Sprintf("Can not find the previous step:%d", step - 1))
+			if queryResult == nil || len(queryResult) == 0 {
+				return shim.Error(fmt.Sprintf("Can not find the previous step:%d, can not continue.", step - 1))
 			}
 
 			var dataJSON on_boarding
@@ -369,7 +389,7 @@ func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string
 		}
 
 		// === Save org to state ===
-		key := txID + "_" + string(step)
+		key := txID + "_" + strconv.Itoa(step)
 		fmt.Printf("starting PutState, key:%s, value:%s\n", key, string(dataJSONasBytes))
 		err = stub.PutState(key, dataJSONasBytes)
 		if err != nil {
@@ -455,7 +475,7 @@ func queryByOwnerAndOperationType(stub shim.ChaincodeStubInterface, operationTyp
 		return nil, errors.New("Incorrect operationType. Expecting non empty type.")
 	}
 	if len(ownerId) != 32 {
-		return nil, errors.New("Incorrect ownerId. Expecting 32 bytes of md5 hash.")
+		return nil, errors.New("Incorrect ownerId. Expecting 16 bytes of md5 hash which has len == 32 of hex string.")
 	}
 
 	queryString := fmt.Sprintf("{\"selector\":{\"operationType\":\"%s\",\"owner\":\"%s\"}}", operationType, ownerId)
@@ -477,7 +497,7 @@ func queryByDataAndOperationType(stub shim.ChaincodeStubInterface, operationType
 		return nil, errors.New("Incorrect operationType. Expecting non empty type.")
 	}
 	if len(ownerId) != 32 {
-		return nil, errors.New("Incorrect ownerId. Expecting 16 bytes of md5 hash.")
+		return nil, errors.New("Incorrect ownerId. Expecting 16 bytes of md5 hash which has len == 32 of hex string.")
 	}
 	if len(dataName) == 0 {
 		return nil, errors.New("Incorrect dataName. Expecting non empty dataName.")
@@ -502,7 +522,7 @@ func queryByStepAndOperationType(stub shim.ChaincodeStubInterface,
 								 dataName string,
                                  targetOwner string,
                                  targetDataName string) ([]byte, error) {
-	var err error
+	//var err error
 	fmt.Println("starting queryByDataAndOperationType")
 
 	if len(operationType) == 0 {
@@ -512,14 +532,16 @@ func queryByStepAndOperationType(stub shim.ChaincodeStubInterface,
 		return nil, errors.New("Incorrect step. Expecting step >= 1.")
 	}
 	if len(ownerId) != 32 || len(targetOwner) != 32 {
-		return nil, errors.New("Incorrect owner or targetOwner. Expecting 16 bytes of md5 hash.")
+		return nil, errors.New("Incorrect owner or targetOwner. Expecting 16 bytes of md5 hash which has len == 32 of hex string.")
 	}
 	if len(dataName) == 0 || len(targetDataName) == 0 {
 		return nil, errors.New("Incorrect dataName or targetDataName. Expecting non empty dataName and targetDataName.")
 	}
 
-	queryString := fmt.Sprintf("{\"selector\":{\"operationType\":\"%s\",\"step\":\"%d\",\"owner\":\"%s\",\"dataName\":\"%s\",\"targetOwner\":\"%s\",\"targetDataName\":\"%s\"}}",
+	queryString := fmt.Sprintf("{\"selector\":{\"operationType\":\"%s\",\"step\":%d,\"owner\":\"%s\",\"dataName\":\"%s\",\"targetOwner\":\"%s\",\"targetDataName\":\"%s\"}}",
 		                       operationType, step, ownerId, dataName, targetOwner, targetDataName)
+	fmt.Printf("- queryByStepAndOperationType queryString:\n%s\n", queryString)
+
 	resultsIterator, err := stub.GetQueryResult(queryString)
 	if err != nil {
 		return nil, err
@@ -532,7 +554,7 @@ func queryByStepAndOperationType(stub shim.ChaincodeStubInterface,
 	if err != nil {
 		return nil, err
 	}
-
+	fmt.Printf("- queryByStepAndOperationType queryResult:\n%s\n", queryResponse.Value)
 	return queryResponse.Value, nil
 }
 
@@ -577,8 +599,7 @@ func getQueryResultForQueryString(stub shim.ChaincodeStubInterface, queryString 
 	}
 	buffer.WriteString("]")
 
-	fmt.Printf("- getQueryResultForQueryString queryResult:\n%s\n", buffer.String())
-
+	//fmt.Printf("- getQueryResultForQueryString queryResult:\n%s\n", buffer.String())
 	return buffer.Bytes(), nil
 }
 
