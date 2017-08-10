@@ -23,12 +23,10 @@ import (
 type SimpleChaincode struct {
 }
 
-
 // Org registering schema is used for registering a organization on chain.
-// ORG_REGISTER
 // To store this data the key will be: md5_hash(cert)
-type org_registering struct {
-	OperationType	string	`json:"operationType"` //operationType is used to distinguish the various types of operations(DATA_REGISTER)
+type OrgRegistering struct {
+	OperationType	string	`json:"operationType"` //operationType is used to distinguish the various types of operations(DataRegister)
 	Owner 			string 	`json:"owner"`   //owner is the md5 hash value of cert
 	OrgName     	string 	`json:"orgName"` //organization name from subject of cert
 	CommonName		string 	`json:"commonName"` //common name from subject of cert
@@ -36,22 +34,24 @@ type org_registering struct {
 }
 
 // Data registering schema is used for uploading a new file.
-// DATA_REGISTER
 // To store this data the key will be: md5_hash(cert) + "_" + dataName
-type data_registering struct {
-	OperationType	string	`json:"operationType"` //operationType is used to distinguish the various types of operations(DATA_REGISTER)
+type DataRegistering struct {
+	OperationType	string	`json:"operationType"` //operationType is used to distinguish the various types of operations(DataRegister)
 	DataType 		string 	`json:"dataType"`   //dataType is used to distinguish the various types of files(the key is phone number or imei etc.)
 	Owner      		string 	`json:"owner"`    //owner is the md5 hash value of cert
 	DataName       	string 	`json:"dataName"`
 	LineCount      	int 	`json:"lineCount"`
+	HLL				string	`json:"hll"`	//not used for now
+	Bloom			string	`json:"bloom"`	//not used for now
 	Timestamp   	pb_timestamp.Timestamp   `json:"timestamp"` //the time when the action happens
+	MatchCount		int		`json:"matchCount"`		//how many times the data has ever been matched before.
+	LastMatchTimestamp	pb_timestamp.Timestamp   `json:"lastMatchTimestamp"` //the time when the data participated matching before.
 }
 
 // On boarding schema is used for matching.
-// ON_BOARDING
 // To store this data the key will be: TxID + "_" + Step
-type on_boarding struct {
-	OperationType	string	`json:"operationType"` //operationType is used to distinguish the various types of operations(ON_BOARDING)
+type OnBoarding struct {
+	OperationType	string	`json:"operationType"` //operationType is used to distinguish the various types of operations(OnBoarding)
 	TxID			string  `json:"txID"`	  //txID of step 1 to track like sessionId for one matching
 	Step 			int 	`json:"step"`
 	Owner      		string 	`json:"owner"`    //owner is the md5 hash value of cert
@@ -61,10 +61,16 @@ type on_boarding struct {
 	TargetOwner     string 	`json:"targetOwner"`
 	TargetDataName  string  `json:"targetDataName"`
 	IsFinished		bool 	`json:"isFinished"`
-	BloomURI		string 	`json:"bloomURI"`
+	//BloomURI		string 	`json:"bloomURI"`
 	Timestamp   	pb_timestamp.Timestamp   `json:"timestamp"` //the time when the action happens
 }
 
+type QueryResult_DataRegistering struct {
+	Key 	string 	`json:"Key"`
+	Record	DataRegistering 	`json:"Record"`
+}
+
+type QueryResult_DataRegistering_Array []*QueryResult_DataRegistering
 
 // ============================================================================================================================
 // Invoke - Our entry point for Invocations
@@ -79,10 +85,16 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 		return t.write(stub, args)
 	} else if function == "read" {            //generic read ledger
 		return t.read(stub, args)
-	} else if function == "query" {           //query ledger with complex JSON query string
-        return t.query(stub, args)
-    } else if function == "submit" {           //submit new uploaded file info
-		return t.submit(stub, args)
+	} else if function == "Query" {           //query ledger with complex JSON query string
+        return t.Query(stub)
+    } else if function == "OrgRegister" {
+		return t.OrgRegister(stub)
+	} else if function == "DataRegister" {
+		return t.DataRegister(stub)
+	} else if function == "OnBoarding" {
+		return t.OnBoarding(stub)
+	} else if function == "WhoAmI" {
+		return t.WhoAmI(stub)
 	}
 
 	// error out
@@ -119,18 +131,78 @@ func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface) pb.Response {
 }
 
 // ============================================================================================================================
-// Submit - write the onboarding data into ledger
+// OrgRegister will only happen when the peer first time try to start a transaction(like uploading new file)
+// SDK client should try to do OrgRegister when starts, if the OrgRegister is already done before, nothing will be happen here.
 // ============================================================================================================================
-func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	// var err error
-	//_, args := stub.GetFunctionAndParameters()
+func (t *SimpleChaincode) OrgRegister(stub shim.ChaincodeStubInterface) pb.Response {
+	function, _ := stub.GetFunctionAndParameters()
 
-	if len(args) < 1 {
-		return shim.Error("Incorrect number of arguments. Expecting at least 1 parameter.")
+	idBytes, err := getCert(stub)
+	if err != nil {
+		return shim.Error(err.Error())
 	}
 
-	// if there is any empty string parameters, return err.
-	for i := 0; i < len(args); i++ {
+	ownerId, err := md5_hash(idBytes)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	operationType := function
+	emptyQueryResults := []byte("[]")
+
+	orgName, commonName, err := getOrgNameAndCommonName(idBytes)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	//If the ownerId already registered before, just return.
+	queryResults, err := queryByOwnerAndOperationType(stub, operationType, ownerId)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	if bytes.Equal(queryResults[:], emptyQueryResults[:]) == false {
+		fmt.Printf("Already did OrgRegister:%s\n", queryResults)
+		return shim.Success(nil)
+	}
+
+	// === prepare the org json ===
+	txTimestamp, err := getTxTimestamp(stub)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	data := &OrgRegistering{operationType,ownerId,orgName,commonName, txTimestamp}
+	dataJSONasBytes, err := json.Marshal(data)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	// === Save org to state ===
+	key := operationType + "_" + ownerId
+	fmt.Printf("Starting PutState, key:%s, value:%s\n", key, string(dataJSONasBytes))
+	err = stub.PutState(key, dataJSONasBytes)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	return shim.Success(nil)
+}
+
+// ============================================================================================================================
+// DataRegister will only happen when the peer first time try to start a transaction(like uploading new file)
+// If the DataRegister is already done before, nothing will be happen here.
+// ============================================================================================================================
+func (t *SimpleChaincode) DataRegister(stub shim.ChaincodeStubInterface) pb.Response {
+	function, args := stub.GetFunctionAndParameters()
+	//-------------3 parameters------------
+	//     0       		1       	2		3		4
+	// "DataType", "DataName", "LineCount" "HLL"	"Bloom"
+
+	// ==== Input sanitation ====
+	if len(args) != 5 {
+		return shim.Error("Incorrect number of arguments. Expecting 5 parameters for DataRegister")
+	}
+	//if there is any empty string parameters, return err.
+	//does not check for last 2 arguments
+	for i := 0; i < len(args) - 2; i++ {
 		if len(args[i]) <= 0 {
 			return shim.Error(strconv.Itoa(i) + "th argument must be a non-empty string")
 		}
@@ -146,246 +218,260 @@ func (t *SimpleChaincode) submit(stub shim.ChaincodeStubInterface, args []string
 		return shim.Error(err.Error())
 	}
 
-	operationType := args[0]
-	// ==== Input sanitation ====
-	// ORG_REGISTER will only happen when the peer first time try to start a transaction(like uploading new file)
-	// SDK client should try to do ORG_REGISTER when starts, if the ORG_REGISTER is already done before, nothing will be happen here.
-
+	operationType := function
 	emptyQueryResults := []byte("[]")
-	if operationType == "ORG_REGISTER" {
-		//-----only 1 parameter------
-		// 		0
-		// "ORG_REGISTER"
 
-        orgName, commonName, err := getOrgNameAndCommonName(idBytes)
+	dataType := strings.ToLower(args[0])
+	dataName := strings.ToLower(args[1])
+
+	lineCount, err := strconv.Atoi(args[2])
+	if err != nil {
+		return shim.Error("3th argument must be a numeric string as lineCount of DataRegister.")
+	}
+
+    hll := args[3]
+	bloom := args[4]
+
+	//If the ownerId already registered this data before, just return.
+	queryResults, err := queryByDataAndOperationType(stub, operationType, ownerId, dataName)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	if bytes.Equal(queryResults[:], emptyQueryResults[:]) == false {
+		fmt.Printf("Already did DataRegister:%s\n", queryResults)
+		return shim.Success(nil)
+	}
+
+	// === prepare the org json ===
+	txTimestamp, err := getTxTimestamp(stub)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	data := &DataRegistering{operationType,
+		dataType,
+		ownerId,
+		dataName,
+		lineCount,
+		hll,
+		bloom,
+		txTimestamp,
+		0,
+		pb_timestamp.Timestamp{0,0}} // lastMatchTimestamp is 0 when registering.
+
+	dataJSONasBytes, err := json.Marshal(data)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	// === Save data to state ===
+	key := operationType + "_" + ownerId + "_" + dataName
+	fmt.Printf("Starting PutState, key:%s, value:%s\n", key, string(dataJSONasBytes))
+	err = stub.PutState(key, dataJSONasBytes)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	return shim.Success(nil)
+}
+
+// ====================================================================================================================================
+// OnBoarding is the main function used to start matching data between owner and targetOwner.
+// The step starts from '1', and SDK clients will listen on event whether targetOwner is the same as theirs, if 'Yes' starts OnBoarding
+// =====================================================================================================================================
+func (t *SimpleChaincode) OnBoarding(stub shim.ChaincodeStubInterface) pb.Response {
+	function, args := stub.GetFunctionAndParameters()
+	//---------------------------------------7 parameters-------------------------------------------------
+	//     0       	 1       		2     		  		3  			   	  4			 	  5			  6				7
+	//  "Step",   "OwnerId",	"DataName", "FilteredLineCount",  "TargetOwner", "TargetDataName", "IsFinished", "Bloom"
+
+	// ==== Input sanitation ====
+	if len(args) != 8 {
+		return shim.Error("Incorrect number of arguments. Expecting 8 parameters for OnBoarding")
+	}
+	// if there is any empty string parameters, return err.
+	for i := 0; i < len(args); i++ {
+		if len(args[i]) <= 0 {
+			return shim.Error(strconv.Itoa(i) + "th argument must be a non-empty string")
+		}
+	}
+
+	operationType := function
+	emptyQueryResults := []byte("[]")
+	var txID string
+
+	step, err := strconv.Atoi(args[0])
+	if err != nil {
+		return shim.Error("1st argument must be a numeric string as step of OnBoarding.")
+	}
+	if step < 1 {
+		return shim.Error("1st argument must be a numeric bigger than 0.")
+	}
+
+	ownerId := strings.ToLower(args[1])
+	dataName := strings.ToLower(args[2])
+	filteredLineCount, err := strconv.Atoi(args[3])
+	if err != nil {
+		return shim.Error("4rd argument must be a numeric string as filteredLineCount of OnBoarding.")
+	}
+
+	targetOwner := strings.ToLower(args[4])
+	targetDataName := strings.ToLower(args[5])
+
+	isFinished, err := strconv.ParseBool(args[6])
+	if err != nil {
+		return shim.Error("6th argument must be a boolean as isFinished of OnBoarding.")
+	}
+
+	//targetOwner should not be the same as owner
+	if ownerId == targetOwner {
+		return shim.Error("The targetOwner should not be the same as current owner.")
+	}
+
+	if step == 1 {
+		//for step 1, get the tx_id of the transaction proposal, and this tx_id will be used as a tracking id until the matching step is finished.
+		txID = stub.GetTxID()
+		//for step 1, check whether the owner exists, whether TargetOwner exists
+		queryResults, err := queryByOwnerAndOperationType(stub, "OrgRegister", ownerId)
 		if err != nil {
 			return shim.Error(err.Error())
 		}
-		//If the ownerId already registered before, just return the history registered info.
-		queryResults, err := queryByOwnerAndOperationType(stub, operationType, ownerId)
+		if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
+			fmt.Sprintf("Current owner:%s has not registered yet, please do OrgRegister first.\n", ownerId)
+			return shim.Error(fmt.Sprintf("Current owner:%s has not registered yet, please do OrgRegister first.", ownerId))
+		}
+
+		queryResults, err = queryByOwnerAndOperationType(stub, "OrgRegister", targetOwner)
 		if err != nil {
 			return shim.Error(err.Error())
 		}
-		if bytes.Equal(queryResults[:], emptyQueryResults[:]) == false {
-			fmt.Printf("Already did ORG_REGISTER:%s\n", queryResults)
-			return shim.Success(queryResults)
+		if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
+			fmt.Sprintf("targetOwner:%s has not registered yet, please do OrgRegister first.\n", targetOwner)
+			return shim.Error(fmt.Sprintf("targetOwner:%s has not registered yet, please do OrgRegister first.", targetOwner))
 		}
 
-		// === prepare the org json ===
-		txTimestamp, err := getTxTimestamp(stub)
+		//for step 1, check whether the DataName exists, whether the TargetDataName exists
+		queryResults, err = queryByDataAndOperationType(stub, "DataRegister", ownerId, dataName)
 		if err != nil {
 			return shim.Error(err.Error())
 		}
-		data := &org_registering{operationType,ownerId,orgName,commonName, txTimestamp}
-		dataJSONasBytes, err := json.Marshal(data)
-		if err != nil {
-			return shim.Error(err.Error())
+		if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
+			fmt.Sprintf("Current owner:%s doesn't have data:%s yet, please do DataRegister for this data first.\n", ownerId, dataName)
+			return shim.Error(fmt.Sprintf("Current owner:%s doesn't have data:%s yet, please do DataRegister for this data first.", ownerId, dataName))
 		}
 
-		// === Save org to state ===
-		key := ownerId
-		fmt.Printf("starting PutState, key:%s, value:%s\n", key, string(dataJSONasBytes))
-		err = stub.PutState(key, dataJSONasBytes)
-		if err != nil {
-			return shim.Error(err.Error())
-		}
-
-	} else if operationType == "DATA_REGISTER" {
-		//---------------4 parameters-------------------
-		//   0       			1       	2     		3
-		// "DATA_REGISTER", "DataType", "DataName", "LineCount"
-
-		if len(args) != 4 {
-			return shim.Error("Incorrect number of arguments. Expecting 4 parameters for DATA_REGISTER")
-		}
-
-		dataType := strings.ToLower(args[1])
-		dataName := strings.ToLower(args[2])
-
-		lineCount, err := strconv.Atoi(args[3])
-		if err != nil {
-			return shim.Error("4th argument must be a numeric string as lineCount of DATA_REGISTER.")
-		}
-
-		//If the ownerId already registered this data before, just return the history data registering info.
-		queryResults, err := queryByDataAndOperationType(stub, operationType, ownerId, dataName)
-		if err != nil {
-			return shim.Error(err.Error())
-		}
-		if bytes.Equal(queryResults[:], emptyQueryResults[:]) == false {
-			fmt.Printf("Already did DATA_REGISTER:%s\n", queryResults)
-			return shim.Success(queryResults)
-		}
-
-		// === prepare the org json ===
-		txTimestamp, err := getTxTimestamp(stub)
+		queryResults, err = queryByDataAndOperationType(stub, "DataRegister", targetOwner, targetDataName)
 		if err != nil {
 			return shim.Error(err.Error())
 		}
 
-		data := &data_registering{operationType,dataType,ownerId,dataName, lineCount, txTimestamp}
-		dataJSONasBytes, err := json.Marshal(data)
+		if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
+			fmt.Sprintf("The targetOwner:%s doesn't have data:%s yet, please double check.\n", targetOwner, targetDataName)
+			return shim.Error(fmt.Sprintf("The targetOwner:%s doesn't have data:%s yet, please double check.", targetOwner, targetDataName))
+		}
+
+		//for step 1, need to check whether the matching for these pair of data ever happened before, if Yes, just return with notice.
+		//define queryResult(but not queryResults), due to queryByStepAndOperationType will return only one single result.
+		queryResult, err := queryByStepAndOperationType(stub, operationType, false, 0, ownerId, dataName, targetOwner, targetDataName)
 		if err != nil {
 			return shim.Error(err.Error())
 		}
 
-		// === Save org to state ===
-		key := ownerId + "_" + dataName
-		fmt.Printf("starting PutState, key:%s, value:%s\n", key, string(dataJSONasBytes))
-		err = stub.PutState(key, dataJSONasBytes)
-		if err != nil {
-			return shim.Error(err.Error())
-		}
-
-	} else if operationType == "ON_BOARDING" {
-		//---------------8 parameters-------------------
-		//      0       	1       	2     		  3  			   		4			 	5			    6			7
-		// "ON_BOARDING", "Step",   "DataName", "FilteredLineCount",  "TargetOwner", "TargetDataName", "IsFinished", "Bloom"
-		if len(args) != 8 {
-			return shim.Error("Incorrect number of arguments. Expecting 8 parameters for ON_BOARDING")
-		}
-
-		step, err := strconv.Atoi(args[1])
-		if err != nil {
-			return shim.Error("2nd argument must be a numeric string as step of ON_BOARDING.")
-		}
-		if step < 1 {
-			return shim.Error("2nd argument must be a numeric bigger than 0.")
-		}
-
-		dataName := strings.ToLower(args[2])
-		filteredLineCount, err := strconv.Atoi(args[3])
-		if err != nil {
-			return shim.Error("4th argument must be a numeric string as filteredLineCount of ON_BOARDING.")
-		}
-
-		targetOwner := strings.ToLower(args[4])
-		targetDataName := strings.ToLower(args[5])
-
-		isFinished, err := strconv.ParseBool(args[6])
-		if err != nil {
-			return shim.Error("6th argument must be a boolean as isFinished of ON_BOARDING.")
-		}
-
-		bloomURI := strings.ToLower(args[7])
-
-		//TODO://targetOwner should not be the same as owner
-		//if ownerId == targetOwner {
-		//	return shim.Error("The targetOwner should not be the same as current owner.")
-		//}
-
-		var txID string
-		if step == 1 {
-			//for step 1, get the tx_id of the transaction proposal, and this tx_id will be used as a tracking id until the matching step is finished.
-			txID = stub.GetTxID()
-			//for step 1, check whether the owner exists, whether TargetOwner exists
-			queryResults, err := queryByOwnerAndOperationType(stub, "ORG_REGISTER", ownerId)
-			if err != nil {
-				return shim.Error(err.Error())
-			}
-			if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
-				fmt.Sprintf("Current owner:%s has not registered yet, please do ORG_REGISTER first.\n", ownerId)
-				return shim.Error(fmt.Sprintf("Current owner:%s has not registered yet, please do ORG_REGISTER first.", ownerId))
-			}
-
-			queryResults, err = queryByOwnerAndOperationType(stub, "ORG_REGISTER", targetOwner)
-			if err != nil {
-				return shim.Error(err.Error())
-			}
-			if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
-				fmt.Sprintf("targetOwner:%s has not registered yet, please do ORG_REGISTER first.\n", targetOwner)
-				return shim.Error(fmt.Sprintf("targetOwner:%s has not registered yet, please do ORG_REGISTER first.", targetOwner))
-			}
-
-			//for step 1, check whether the DataName exists, whether the TargetDataName exists
-			queryResults, err = queryByDataAndOperationType(stub, "DATA_REGISTER", ownerId, dataName)
-			if err != nil {
-				return shim.Error(err.Error())
-			}
-			if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
-				fmt.Sprintf("Current owner:%s doesn't have data:%s yet, please do DATA_REGISTER for this data first.\n", ownerId, dataName)
-				return shim.Error(fmt.Sprintf("Current owner:%s doesn't have data:%s yet, please do DATA_REGISTER for this data first.", ownerId, dataName))
-			}
-
-			queryResults, err = queryByDataAndOperationType(stub, "DATA_REGISTER", targetOwner, targetDataName)
-			if err != nil {
-				return shim.Error(err.Error())
-			}
-
-			if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
-				fmt.Sprintf("The targetOwner:%s doesn't have data:%s yet, please double check.\n", targetOwner, targetDataName)
-				return shim.Error(fmt.Sprintf("The targetOwner:%s doesn't have data:%s yet, please double check.", targetOwner, targetDataName))
-			}
-
-			//for step 1, need to check whether the matching for these pair of data ever happened before, if Yes, just return with notice.
-			//define queryResult(but not queryResults), due to queryByStepAndOperationType will return only one single result.
-			queryResult, err := queryByStepAndOperationType(stub, operationType, 1, ownerId, dataName, targetOwner, targetDataName)
-			if err != nil {
-				return shim.Error(err.Error())
-			}
-
-			if queryResult != nil && len(queryResult) > 0 {
-				var dataJSON on_boarding
-				err = json.Unmarshal(queryResult, &dataJSON)
-				if err != nil {
-					return shim.Error(err.Error())
-				}
-				return shim.Error(fmt.Sprintf("This ON_BOARDING action already finished before, txID:%s", dataJSON.TxID))
-			}
-		} else {
-			//here means step > 1
-			//check step, whether there is a (step - 1) happened before to make sure this is correct step. Also the step should not finished(isFinished==false)
-			queryResult, err := queryByStepAndOperationType(stub, operationType, step - 1, ownerId, dataName, targetOwner, targetDataName)
-			if err != nil {
-				return shim.Error(err.Error())
-			}
-			if queryResult == nil || len(queryResult) == 0 {
-				return shim.Error(fmt.Sprintf("Can not find the previous step:%d, can not continue.", step - 1))
-			}
-
-			var dataJSON on_boarding
+		if queryResult != nil && len(queryResult) > 0 {
+			var dataJSON OnBoarding
 			err = json.Unmarshal(queryResult, &dataJSON)
 			if err != nil {
 				return shim.Error(err.Error())
 			}
-
-			txID = dataJSON.TxID	//reuse the txID of previous step
-			if dataJSON.IsFinished {
-				return shim.Error(fmt.Sprintf("This ON_BOARDING action already finished before, txID:%s", txID))
-			}
+			return shim.Error(fmt.Sprintf("This OnBoarding action already finished before, txID:%s", dataJSON.TxID))
+		}
+	} else {
+		//here means step > 1
+		//check step, whether there is a (step - 1) happened before to make sure this is correct step. Also the step should not finished(isFinished==false)
+		queryResult, err := queryByStepAndOperationType(stub, operationType, true, step - 1, ownerId, dataName, targetOwner, targetDataName)
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+		if queryResult == nil || len(queryResult) == 0 {
+			return shim.Error(fmt.Sprintf("Can not find the previous step:%d, can not continue.", step - 1))
 		}
 
-		// === prepare the on_boarding json ===
-		txTimestamp, err := getTxTimestamp(stub)
+		var dataJSON OnBoarding
+		err = json.Unmarshal(queryResult, &dataJSON)
 		if err != nil {
 			return shim.Error(err.Error())
 		}
 
-		data := &on_boarding{operationType,
-									 txID,
-			                         step,
-			                       ownerId,
-			                    dataName,
-			               filteredLineCount,
-			                  targetOwner,
-			               targetDataName,
-								 isFinished,
-							     bloomURI,
-								txTimestamp}
+		txID = dataJSON.TxID	//reuse the txID of previous step
+		if dataJSON.IsFinished {
+			return shim.Error(fmt.Sprintf("This OnBoarding action already finished before, txID:%s", txID))
+		}
+	}
 
-		dataJSONasBytes, err := json.Marshal(data)
+	// === prepare the OnBoarding json ===
+	txTimestamp, err := getTxTimestamp(stub)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	data := &OnBoarding{operationType,
+						 txID,
+						 step,
+						 ownerId,
+						 dataName,
+						 filteredLineCount,
+						 targetOwner,
+						 targetDataName,
+						 isFinished,
+						 txTimestamp}
+
+	dataJSONasBytes, err := json.Marshal(data)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	// === Save matching step to state ===
+	key := operationType + "_" + txID
+	fmt.Printf("Starting PutState, key:%s, value:%s\n", key, string(dataJSONasBytes))
+	err = stub.PutState(key, dataJSONasBytes)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	// === Save data MatchCount and LastMatchTimestamp to state ===
+    if isFinished == true {
+		operationType = "DataRegister"
+		queryResults, err := queryByDataAndOperationType(stub, operationType, targetOwner, targetDataName)
 		if err != nil {
 			return shim.Error(err.Error())
 		}
+		var queryResult_DataRegistering_Array QueryResult_DataRegistering_Array
+		err = json.Unmarshal(queryResults, &queryResult_DataRegistering_Array)
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+		if len(queryResult_DataRegistering_Array) == 0 {
+			return shim.Error(fmt.Sprintf("The targetDataName:%s belongs to targetOwner:%s doesn't exist.", targetDataName, targetOwner))
+		}
+		if len(queryResult_DataRegistering_Array) > 1 {
+			return shim.Error(fmt.Sprintf("The targetDataName:%s belongs to targetOwner:%s has duplicated records.", targetDataName, targetOwner))
+		}
 
-		// === Save org to state ===
-		key := txID + "_" + strconv.Itoa(step)
-		fmt.Printf("starting PutState, key:%s, value:%s\n", key, string(dataJSONasBytes))
+		key = queryResult_DataRegistering_Array[0].Key
+
+		record := queryResult_DataRegistering_Array[0].Record
+		record.MatchCount = record.MatchCount + 1
+		record.LastMatchTimestamp = txTimestamp
+		dataJSONasBytes, err = json.Marshal(record)
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+		fmt.Printf("Starting PutState, key:%s, value:%s\n", key, string(dataJSONasBytes))
 		err = stub.PutState(key, dataJSONasBytes)
 		if err != nil {
 			return shim.Error(err.Error())
 		}
 	}
+
 	return shim.Success(nil)
 }
 
@@ -436,11 +522,41 @@ func (t *SimpleChaincode) read(stub shim.ChaincodeStubInterface, args []string) 
 }
 
 // ============================================================================================================================
+// Query - query who am I, if I already registered, return the registered record, otherwise return nil.
+// ============================================================================================================================
+func (t *SimpleChaincode) WhoAmI(stub shim.ChaincodeStubInterface) pb.Response {
+
+	idBytes, err := getCert(stub)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	ownerId, err := md5_hash(idBytes)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	operationType := "OrgRegister"
+	emptyQueryResults := []byte("[]")
+
+	//If the ownerId already registered before, just return the history registered info.
+	queryResults, err := queryByOwnerAndOperationType(stub, operationType, ownerId)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	if bytes.Equal(queryResults[:], emptyQueryResults[:]) == false {
+		return shim.Success(queryResults)
+	}
+	return shim.Success(nil)
+}
+
+// ============================================================================================================================
 // Query - query a generic variable from ledger with complex query string in JSON format.
 // ============================================================================================================================
-func (t *SimpleChaincode) query(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface) pb.Response {
+	_, args := stub.GetFunctionAndParameters()
 	var err error
-	fmt.Println("starting query")
+	fmt.Println("starting Query")
 
 	if len(args) != 1 {
 		return shim.Error("Incorrect number of arguments. Expecting query string of JSON to query")
@@ -465,7 +581,7 @@ func queryByOwnerAndOperationType(stub shim.ChaincodeStubInterface, operationTyp
 		return nil, errors.New("Incorrect operationType. Expecting non empty type.")
 	}
 	if len(ownerId) != 32 {
-		return nil, errors.New("Incorrect ownerId. Expecting 16 bytes of md5 hash which has len == 32 of hex string.")
+		return nil, errors.New(fmt.Sprintf("Incorrect ownerId. Expecting 16 bytes of md5 hash which has len == 32 of hex string. ownerId:%s", ownerId))
 	}
 
 	queryString := fmt.Sprintf("{\"selector\":{\"operationType\":\"%s\",\"owner\":\"%s\"}}", operationType, ownerId)
@@ -487,7 +603,7 @@ func queryByDataAndOperationType(stub shim.ChaincodeStubInterface, operationType
 		return nil, errors.New("Incorrect operationType. Expecting non empty type.")
 	}
 	if len(ownerId) != 32 {
-		return nil, errors.New("Incorrect ownerId. Expecting 16 bytes of md5 hash which has len == 32 of hex string.")
+		return nil, errors.New(fmt.Sprintf("Incorrect ownerId. Expecting 16 bytes of md5 hash which has len == 32 of hex string. ownerId:%s", ownerId))
 	}
 	if len(dataName) == 0 {
 		return nil, errors.New("Incorrect dataName. Expecting non empty dataName.")
@@ -507,6 +623,7 @@ func queryByDataAndOperationType(stub shim.ChaincodeStubInterface, operationType
 // ============================================================================================================================
 func queryByStepAndOperationType(stub shim.ChaincodeStubInterface,
 	                             operationType string,
+								 byStep bool, // if this is 'true', mean query by step, otherwise will not query by step.
                                  step int,
 	                             ownerId string,
 								 dataName string,
@@ -518,18 +635,25 @@ func queryByStepAndOperationType(stub shim.ChaincodeStubInterface,
 	if len(operationType) == 0 {
 		return nil, errors.New("Incorrect operationType. Expecting non empty type.")
 	}
-	if step < 1 {
+	if byStep && step < 1 {
 		return nil, errors.New("Incorrect step. Expecting step >= 1.")
 	}
 	if len(ownerId) != 32 || len(targetOwner) != 32 {
-		return nil, errors.New("Incorrect owner or targetOwner. Expecting 16 bytes of md5 hash which has len == 32 of hex string.")
+		return nil, errors.New(fmt.Sprintf("Incorrect owner or targetOwner. Expecting 16 bytes of md5 hash which has len == 32 of hex string.ownerId:%s", ownerId))
 	}
 	if len(dataName) == 0 || len(targetDataName) == 0 {
 		return nil, errors.New("Incorrect dataName or targetDataName. Expecting non empty dataName and targetDataName.")
 	}
 
-	queryString := fmt.Sprintf("{\"selector\":{\"operationType\":\"%s\",\"step\":%d,\"owner\":\"%s\",\"dataName\":\"%s\",\"targetOwner\":\"%s\",\"targetDataName\":\"%s\"}}",
-		                       operationType, step, ownerId, dataName, targetOwner, targetDataName)
+	var queryString string
+	if byStep == true {
+		queryString = fmt.Sprintf("{\"selector\":{\"operationType\":\"%s\",\"step\":%d,\"owner\":\"%s\",\"dataName\":\"%s\",\"targetOwner\":\"%s\",\"targetDataName\":\"%s\"}}",
+			operationType, step, ownerId, dataName, targetOwner, targetDataName)
+	} else {
+		queryString = fmt.Sprintf("{\"selector\":{\"operationType\":\"%s\",\"owner\":\"%s\",\"dataName\":\"%s\",\"targetOwner\":\"%s\",\"targetDataName\":\"%s\"}}",
+			operationType, ownerId, dataName, targetOwner, targetDataName)
+	}
+
 	fmt.Printf("- queryByStepAndOperationType queryString:\n%s\n", queryString)
 
 	resultsIterator, err := stub.GetQueryResult(queryString)

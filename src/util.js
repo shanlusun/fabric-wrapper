@@ -8,7 +8,7 @@ function buildConnectionOpt(o) {
     return [{
       url: o.url,
       eventUrl: o.eventUrl,
-      opt: { pem, 'ssl-target-name-override': o.sslTargetNameOverride }
+      opt: { pem, 'ssl-target-name-override': o.sslTargetNameOverride, 'grpc.http2.keepalive_time' : 20 }
     }];
   } else if (Array.isArray(o)) {
     return o.map(item => buildConnectionOpt(item)[0])
