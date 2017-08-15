@@ -70,28 +70,25 @@ type QueryResult_DataRegistering struct {
 type QueryResult_DataRegistering_Array []*QueryResult_DataRegistering
 
 // New schemas used for panel
-type PanelDataRegistering struct {
-	OperationType	string	`json:"operationType"` //operationType is used to distinguish the various types of operations(Panel)
-	DataType 		string 	`json:"dataType"`   //dataType is used to distinguish the various types of files(the key is phone number or imei etc.)
-	Owner      		string 	`json:"owner"`    //owner is the md5 hash value of cert
-	Tags			Tags	`json:"tags"`	//all the tags will be filled in here in future.
-	Timestamp   	pb_timestamp.Timestamp   `json:"timestamp"` //the time when the registering happens
-	MatchCount		int		`json:"matchCount"`		//how many times the data has ever been matched before.
-	LastMatchTimestamp	pb_timestamp.Timestamp   `json:"lastMatchTimestamp"` //the time when the data participated matching before.
-}
-
-type PanelResult struct {
+type Paneling struct {
+	OperationType	string	`json:"operationType"` //operationType is used to distinguish the various types of operations(Paneling)
 	TxID			string  `json:"txID"`	  //txID is used to tracking all the progress of panel
 	Sponsor  		string	`json:"sponsor"`    //sponsor is the ownerId which is the md5 hash value of cert
 	DataType 		string 	`json:"dataType"`   //dataType is used to distinguish the various types of files(the key is phone number or imei etc.)
 	DataName		string 	`json:"dataName"`
 	Providers      	Providers 	`json:"providers"`
+	IsFinished		bool 	`json:"isFinished"`
 	Timestamp   	pb_timestamp.Timestamp   `json:"timestamp"` //the time when the action happens
 	LastUpdatedTimestamp	pb_timestamp.Timestamp   `json:"lastUpdatedTimestamp"` //the time when the data updated.
 }
 
-type Tags struct {
-	Gender	Gender	`json:"gender"` // currently only support one tag:gender, might add new tags in future.
+type Providers struct {
+	GenderProviderArray	[]GenderProvider	`json:"genderProviderArray"`
+}
+
+type GenderProvider struct {
+	ProviderId		string	`json:"providerId"`    //owner is the md5 hash value of cert
+	Gender			Gender	`json:"gender"`
 }
 
 type Gender struct {
@@ -103,17 +100,9 @@ type Gender struct {
 type DataDigest struct {
 	LineCount      	int 	`json:"lineCount"`
 	HLL				string	`json:"hll"`
-	Bloom			string	`json:"bloom"`  //not used for now
+	//Bloom			string	`json:"bloom"`  //not used for now
 }
 
-type Providers struct {
-	GenderProviderArray	[]GenderProvider	`json:"genderProviderArray"`
-}
-
-type GenderProvider struct {
-	Owner		string	`json:"owner"`    //owner is the md5 hash value of cert
-	Gender		Gender	`json:"gender"`
-}
 
 type AdChainChaincode struct {
 }
@@ -166,20 +155,15 @@ func (t *AdChainChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response 
 func (t *AdChainChaincode) OrgRegister(stub shim.ChaincodeStubInterface) pb.Response {
 	function, _ := stub.GetFunctionAndParameters()
 
-	idBytes, err := getCert(stub)
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-
-	ownerId, err := md5_hash(idBytes)
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-
 	operationType := function
 	emptyQueryResults := []byte("[]")
 
-	orgName, commonName, err := getOrgNameAndCommonName(idBytes)
+	ownerId, err := generateOwnerIdByCert(stub)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	orgName, commonName, err := getOrgNameAndCommonName(stub)
 	if err != nil {
 		return shim.Error(err.Error())
 	}
@@ -222,8 +206,8 @@ func (t *AdChainChaincode) OrgRegister(stub shim.ChaincodeStubInterface) pb.Resp
 func (t *AdChainChaincode) DataRegister(stub shim.ChaincodeStubInterface) pb.Response {
 	function, args := stub.GetFunctionAndParameters()
 	//-------------3 parameters is necessary------------
-	//     0       		1       	2		3		  4			5		6
-	// "DataType", "DataName", "LineCount" "HLL"	"Bloom"	  "Tag"	  "Field"
+	//     0       		1       	2		3		  4			5						6
+	// "DataType", "DataName", "LineCount" "HLL"	"Bloom"	  "Tag"(optional)	  "Field"(optional)
 
 	// ==== Input sanitation ====
 	if len(args) < 5 {
@@ -231,18 +215,13 @@ func (t *AdChainChaincode) DataRegister(stub shim.ChaincodeStubInterface) pb.Res
 	}
 	//if there is any empty string parameters, return err.
 	//does not check for last 4 arguments
-	for i := 0; i < len(args) - 4; i++ {
+	for i := 0; i < 3; i++ {
 		if len(args[i]) <= 0 {
 			return shim.Error(strconv.Itoa(i) + "th argument must be a non-empty string")
 		}
 	}
 
-	idBytes, err := getCert(stub)
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-
-	ownerId, err := md5_hash(idBytes)
+	ownerId, err := generateOwnerIdByCert(stub)
 	if err != nil {
 		return shim.Error(err.Error())
 	}
@@ -265,9 +244,8 @@ func (t *AdChainChaincode) DataRegister(stub shim.ChaincodeStubInterface) pb.Res
 	var tag string
 	var field string
 	if len(args) >= 7 {
-
-
-
+		tag = args[5]
+		field = args[6]
 	}
 
 	//If the ownerId already registered this data before, just return.
@@ -293,6 +271,8 @@ func (t *AdChainChaincode) DataRegister(stub shim.ChaincodeStubInterface) pb.Res
 							 lineCount,
 							 hll,
 							 bloom,
+		                     tag,
+		                     field,
 							 txTimestamp,
 							 0,
 							 pb_timestamp.Timestamp{0,0}} // lastMatchTimestamp is 0 when registering.
@@ -319,17 +299,18 @@ func (t *AdChainChaincode) DataRegister(stub shim.ChaincodeStubInterface) pb.Res
 func (t *AdChainChaincode) OnBoarding(stub shim.ChaincodeStubInterface) pb.Response {
 	function, args := stub.GetFunctionAndParameters()
 	//---------------------------------------7 parameters-------------------------------------------------
-	//     0       	 1       		2     		  		3  			   	  4			 	  5			  6				7
-	//  "Step",   "OwnerId",	"DataName", "FilteredLineCount",  "TargetOwner", "TargetDataName", "IsFinished", "Bloom"
+	//     0       	 1       		2     		  		3  			   	  4			 	  5			  6				7		  8
+	//  "Step",   "OwnerId",	"DataName", "FilteredLineCount",  "TargetOwner", "TargetDataName", "IsFinished", "Bloom"	"TxID"(optional)
 
-	//TODO: Need to add TxID as 1st parameter
+	//TODO: TxID is added for panel to track all the progress for panel transaction(PanelRequest, OnBoarding, ... etc.)
+	//TODO: Add checking for dataType of both data, should be the same
 
 	// ==== Input sanitation ====
-	if len(args) != 8 {
-		return shim.Error("Incorrect number of arguments. Expecting 8 parameters for OnBoarding")
+	if len(args) < 8 {
+		return shim.Error("Incorrect number of arguments. Expecting at least 8 parameters for OnBoarding")
 	}
 	// if there is any empty string parameters, return err.
-	for i := 0; i < len(args); i++ {
+	for i := 0; i < 8; i++ {
 		if len(args[i]) <= 0 {
 			return shim.Error(strconv.Itoa(i) + "th argument must be a non-empty string")
 		}
@@ -337,7 +318,6 @@ func (t *AdChainChaincode) OnBoarding(stub shim.ChaincodeStubInterface) pb.Respo
 
 	operationType := function
 	emptyQueryResults := []byte("[]")
-	var txID string
 
 	step, err := strconv.Atoi(args[0])
 	if err != nil {
@@ -362,14 +342,28 @@ func (t *AdChainChaincode) OnBoarding(stub shim.ChaincodeStubInterface) pb.Respo
 		return shim.Error("6th argument must be a boolean as isFinished of OnBoarding.")
 	}
 
+	//for step 1, get the tx_id of the transaction proposal, and this tx_id will be used as a tracking id until the matching step is finished.
+	var txID string = stub.GetTxID()
+	//if the TxID is passed from argument which means we need to reuse that TxID as desired, currently this only happens for paneling.
+	if len(args) >= 8 && len(args[8]) > 0 {
+		txID = args[8]
+	}
+
 	////targetOwner should not be the same as owner
 	//if ownerId == targetOwner {
 	//	return shim.Error("The targetOwner should not be the same as current owner.")
 	//}
 
 	if step == 1 {
-		//for step 1, get the tx_id of the transaction proposal, and this tx_id will be used as a tracking id until the matching step is finished.
-		txID = stub.GetTxID()
+		//for step 1, check whether the owner is current owner
+		currentOwnerId, err := generateOwnerIdByCert(stub)
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+        if currentOwnerId != ownerId {
+			return shim.Error(fmt.Sprintf("Current ownerId:%s does not equal to the ownerId:%s in argument, step=1", currentOwnerId, ownerId))
+		}
+
 		//for step 1, check whether the owner exists, whether TargetOwner exists
 		queryResults, err := queryByOwnerAndOperationType(stub, "OrgRegister", ownerId)
 		if err != nil {
@@ -409,6 +403,8 @@ func (t *AdChainChaincode) OnBoarding(stub shim.ChaincodeStubInterface) pb.Respo
 			return shim.Error(fmt.Sprintf("The targetOwner:%s doesn't have data:%s yet, please double check.", targetOwner, targetDataName))
 		}
 
+		//TODO:For paneling, we need to support multiple times onboarding. So remove the limitation of multiple onboarding temporarily.
+		//Also there is no action or notice for this scenario on front UI now. (Suppose to ask update panel dataName if the data is updated)
 		//for step 1, need to check whether the matching for these pair of data ever happened before, if Yes, just return with notice.
 		//define queryResult(but not queryResults), due to queryByStepAndOperationType will return only one single result.
 		queryResult, err := queryByStepAndOperationType(stub, operationType, false, 0, ownerId, dataName, targetOwner, targetDataName)
@@ -447,7 +443,7 @@ func (t *AdChainChaincode) OnBoarding(stub shim.ChaincodeStubInterface) pb.Respo
 
 		txID = dataJSON.TxID	//reuse the txID of previous step
 		if dataJSON.IsFinished {
-			return shim.Error(fmt.Sprintf("This OnBoarding action already finished before, txID:%s", txID))
+			return shim.Error(fmt.Sprintf("This OnBoarding action already finished on step:%d, txID:%s", step - 1, txID))
 		}
 	}
 
@@ -525,12 +521,7 @@ func (t *AdChainChaincode) OnBoarding(stub shim.ChaincodeStubInterface) pb.Respo
 // ============================================================================================================================
 func (t *AdChainChaincode) WhoAmI(stub shim.ChaincodeStubInterface) pb.Response {
 
-	idBytes, err := getCert(stub)
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-
-	ownerId, err := md5_hash(idBytes)
+	ownerId, err := generateOwnerIdByCert(stub)
 	if err != nil {
 		return shim.Error(err.Error())
 	}
@@ -752,6 +743,22 @@ func getCert(stub shim.ChaincodeStubInterface) ([]byte, error) {
 	return serializedIdentity.IdBytes, nil
 }
 
+// ============================================================================================================================
+// Generate the ownerId which is the md5 hash value of cert
+// ============================================================================================================================
+func generateOwnerIdByCert(stub shim.ChaincodeStubInterface) (string, error) {
+	idBytes, err := getCert(stub)
+	if err != nil {
+		return "", err
+	}
+
+	ownerId, err := md5_hash(idBytes)
+	if err != nil {
+		return "", err
+	}
+	return ownerId, nil
+}
+
 func getTxTimestamp(stub shim.ChaincodeStubInterface) (pb_timestamp.Timestamp, error) {
 	pTxTimestamp, err := stub.GetTxTimestamp()
 	if err != nil {
@@ -768,7 +775,13 @@ func getTxTimestamp(stub shim.ChaincodeStubInterface) (pb_timestamp.Timestamp, e
 // Parse the cert to fetch org name and common name
 // return both orgName and commonName
 // ========================================================
-func getOrgNameAndCommonName(idBytes []byte) (string, string, error) {
+func getOrgNameAndCommonName(stub shim.ChaincodeStubInterface) (string, string, error) {
+
+	idBytes, err := getCert(stub)
+	if err != nil {
+		return "", "", err
+	}
+
 	block, _ := pem.Decode([]byte(idBytes))
 	if block == nil {
 		return "", "", errors.New("Failed to parse certificate PEM")
@@ -796,96 +809,277 @@ func getOrgNameAndCommonName(idBytes []byte) (string, string, error) {
 
 // ===============================================New support for panel========================================================
 //
-//// ============================================================================================================================
-//// DataRegister will only happen when the peer first time try to start a transaction(like uploading new file)
-//// If the DataRegister is already done before, nothing will happen here.
-//// ============================================================================================================================
-//func (t *AdChainChaincode) PanelDataRegister(stub shim.ChaincodeStubInterface) pb.Response {
-//	function, args := stub.GetFunctionAndParameters()
-//	//-------------6 parameters------------
-//	//     0       		1       	2		 	3			4			5
-//	//   "tag"		 "field"	"DataType", "LineCount"   "HLL"		"Bloom"
-//
-//	// ==== Input sanitation ====
-//	if len(args) != 6 {
-//		return shim.Error("Incorrect number of arguments. Expecting 6 parameters for DataRegister")
-//	}
-//	//if there is any empty string parameters, return err.
-//	//does not check for last 1 argument:Bloom
-//	for i := 0; i < len(args) - 1; i++ {
-//		if len(args[i]) <= 0 {
-//			return shim.Error(strconv.Itoa(i) + "th argument must be a non-empty string")
-//		}
-//	}
-//
-//	idBytes, err := getCert(stub)
-//	if err != nil {
-//		return shim.Error(err.Error())
-//	}
-//
-//	ownerId, err := md5_hash(idBytes)
-//	if err != nil {
-//		return shim.Error(err.Error())
-//	}
-//
-//	operationType := function
-//	emptyQueryResults := []byte("[]")
-//
-//	tag := strings.ToLower(args[0])
-//	field := strings.ToLower(args[1])
-//
-//	dataType := strings.ToLower(args[2])
-//	dataName := args[1]
-//
-//	lineCount, err := strconv.Atoi(args[2])
-//	if err != nil {
-//		return shim.Error("3th argument must be a numeric string as lineCount of DataRegister.")
-//	}
-//
-//	hll := args[3]
-//	bloom := args[4]
-//
-//	//If the ownerId already registered this data before, just return.
-//	queryResults, err := queryByDataAndOperationType(stub, operationType, ownerId, dataName)
-//	if err != nil {
-//		return shim.Error(err.Error())
-//	}
-//	if bytes.Equal(queryResults[:], emptyQueryResults[:]) == false {
-//		fmt.Printf("Already did DataRegister:%s\n", queryResults)
-//		return shim.Success(nil)
-//	}
-//
-//	// === prepare the org json ===
-//	txTimestamp, err := getTxTimestamp(stub)
-//	if err != nil {
-//		return shim.Error(err.Error())
-//	}
-//
-//	data := &DataRegistering{operationType,
-//							 dataType,
-//							 ownerId,
-//							 dataName,
-//							 lineCount,
-//							 hll,
-//							 bloom,
-//							 txTimestamp,
-//							 0,
-//							 pb_timestamp.Timestamp{0,0}} // lastMatchTimestamp is 0 when registering.
-//
-//	dataJSONasBytes, err := json.Marshal(data)
-//	if err != nil {
-//		return shim.Error(err.Error())
-//	}
-//
-//	// === Save data to state ===
-//	key := operationType + "_" + ownerId + "_" + dataName
-//	fmt.Printf("Starting PutState, key:%s, value:%s\n", key, string(dataJSONasBytes))
-//	err = stub.PutState(key, dataJSONasBytes)
-//	if err != nil {
-//		return shim.Error(err.Error())
-//	}
-//	return shim.Success(nil)
-//}
+// ============================================================================================================================
+// PanelRequest will happen when C has a requirement to calculate TA based on Provider A and Provider B. (C might be A or B)
+// If the PanelRequest is already finished before, nothing will happen here.
+// ============================================================================================================================
+func (t *AdChainChaincode) PanelRequest(stub shim.ChaincodeStubInterface) pb.Response {
+	function, args := stub.GetFunctionAndParameters()
+	//-------------6 parameters------------
+	//     0       		1       	 	  2		 			      3
+	// "DataType"  "DataName"   "ProviderId_1|ProviderId_2"     "Tag"
+
+	// ==== Input sanitation ====
+	if len(args) != 5 {
+		return shim.Error("Incorrect number of arguments. Expecting 5 parameters for PanelRequest")
+	}
+	//if there is any empty string parameters, return err.
+	for i := 0; i < len(args); i++ {
+		if len(args[i]) <= 0 {
+			return shim.Error(strconv.Itoa(i) + "th argument must be a non-empty string")
+		}
+	}
+
+	var txID string = stub.GetTxID() // the txID is important, it will be used to track all the steps of this paneling.
+
+	ownerId, err := generateOwnerIdByCert(stub) // the ownerId here is the Sponsor of panel
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	operationType := function
+	emptyQueryResults := []byte("[]")
+
+	dataType := strings.ToLower(args[0])
+	dataName := args[1]
+
+	providerIdList := strings.Split(args[2], "|")
+	tag := strings.ToLower(args[3])
+
+    if len(providerIdList) != 2 {
+		return shim.Error("Incorrect Providers argument. Expecting 2 providerIds for PanelRequest")
+	}
+
+	//Providers should not be same one
+	if providerIdList[0] == providerIdList[1] {
+		return shim.Error("Incorrect Providers argument. Expecting 2 different providerIds for PanelRequest, now they are the same.")
+	}
+
+	//check whether the owner exists, whether providers exists
+	queryResults, err := queryByOwnerAndOperationType(stub, "OrgRegister", ownerId)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
+		return shim.Error(fmt.Sprintf("Current owner:%s has not registered yet, please do OrgRegister first.", ownerId))
+	}
+
+	for i := 0; i < len(providerIdList); i++ {
+		queryResults, err := queryByOwnerAndOperationType(stub, "OrgRegister", providerIdList[i])
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+		if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
+			return shim.Error(fmt.Sprintf("ProviderId:%s has not registered yet, please do OrgRegister first.", providerIdList[i]))
+		}
+	}
+
+	//check whether the DataName(which belongs to ownerId) exists. Do not check the panel data exists or not here, because they will be checked inside onboarding.
+	queryResults, err = queryByDataAndOperationType(stub, "DataRegister", ownerId, dataName)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	if bytes.Equal(queryResults[:], emptyQueryResults[:]) {
+		fmt.Sprintf("Current owner:%s doesn't have data:%s yet, please do DataRegister for this data first.\n", ownerId, dataName)
+		return shim.Error(fmt.Sprintf("Current owner:%s doesn't have data:%s yet, please do DataRegister for this data first.", ownerId, dataName))
+	}
+
+	// === prepare the Paneling json ===
+	var providers Providers
+	//new object based on the tag, we might support other tags later here.
+	if tag == "gender" {
+		var genderProviderArray []GenderProvider
+		genderProviderArray[0] = GenderProvider{providerIdList[0], nil}
+		genderProviderArray[1] = GenderProvider{providerIdList[1], nil}
+		providers = Providers{genderProviderArray}
+	} else {
+		return shim.Error(fmt.Sprintf("Current tag:%s has not been supported yet.", tag))
+	}
+
+	txTimestamp, err := getTxTimestamp(stub)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	data := &Paneling{operationType,
+		              		 txID,
+							 ownerId,
+							 dataType,
+							 dataName,
+		                     providers,
+							 false,
+							 txTimestamp,
+							 pb_timestamp.Timestamp{0,0}} // lastMatchTimestamp is 0 when registering.
+
+	dataJSONasBytes, err := json.Marshal(data)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	// === Save data to state ===
+	key := operationType + "_" + txID
+	fmt.Printf("Starting PutState, key:%s, value:%s\n", key, string(dataJSONasBytes))
+	err = stub.PutState(key, dataJSONasBytes)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	return shim.Success(nil)
+}
+
+// ============================================================================================================================
+// Query - query by operationType, txID for Paneling data.
+// ============================================================================================================================
+func queryByTxIDAndOperationType(stub shim.ChaincodeStubInterface, operationType string, txID string) ([]byte, error) {
+	var err error
+	fmt.Println("starting queryByTxIDAndOperationType")
+
+	if len(operationType) == 0 {
+		return nil, errors.New("Incorrect operationType. Expecting non empty type.")
+	}
+	if len(txID) == 0 {
+		return nil, errors.New("Incorrect txID. Expecting non empty txID.")
+	}
+
+	queryString := fmt.Sprintf("{\"selector\":{\"operationType\":\"%s\",\"txID\":\"%s\"}}",
+		operationType, txID)
+
+	resultsIterator, err := stub.GetQueryResult(queryString)
+	if err != nil {
+		return nil, err
+	}
+	defer resultsIterator.Close()
+	if resultsIterator.HasNext() == false {
+		return nil, nil 	//there is no record for txID
+	}
+	queryResponse, err := resultsIterator.Next()
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("- queryByTxIDAndOperationType queryResult:\n%s\n", queryResponse.Value)
+	return queryResponse.Value, nil
+}
+
+// ============================================================================================================================
+// PanelUpdate is used to update the PanelRequest submitted and not finished.
+// If the PanelRequest is already finished before, nothing will happen here.
+// ============================================================================================================================
+func (t *AdChainChaincode) PanelUpdate(stub shim.ChaincodeStubInterface) pb.Response {
+	function, args := stub.GetFunctionAndParameters()
+	//-------------6 parameters------------
+	//     0       		1       	        2		 	                   3			                 4
+	//   "TxID"	    "IsFinished"  "Tag|Field|LineCount|HLL"     "Tag|Field|LineCount|HLL"       ...(add as many as we have)
+	//Because the Paneling request might be triggered by the same Sponsor with same Data together with Same Providers multiple times. So TxID is the unique ID.
+
+	// ==== Input sanitation ====
+	if len(args) < 3 {
+		return shim.Error("Incorrect number of arguments. Expecting at least 3 parameters for PanelUpdate")
+	}
+	//if there is any empty string parameters, return err.
+	for i := 0; i < len(args); i++ {
+		if len(args[i]) <= 0 {
+			return shim.Error(strconv.Itoa(i) + "th argument must be a non-empty string")
+		}
+	}
+
+	providerId, err := generateOwnerIdByCert(stub)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	txID := args[0]
+	isFinished, err := strconv.ParseBool(args[1])
+	if err != nil {
+		return shim.Error("2nd argument must be a boolean as isFinished of PanelUpdate.")
+	}
+
+	//check whether the Paneling record which has TxID exists.
+	var dataJSON Paneling
+	queryResult, err := queryByTxIDAndOperationType(stub, "PanelRequest", txID)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	if queryResult != nil && len(queryResult) > 0 {
+		err = json.Unmarshal(queryResult, &dataJSON)
+		if err != nil {
+			return shim.Error(err.Error())
+		}
+		//if the paneling ever happened and isFinished, should return.
+		if dataJSON.IsFinished {
+			return shim.Error(fmt.Sprintf("This Paneling action already finished before, txID:%s", dataJSON.TxID))
+		}
+	} else {
+		fmt.Sprintf("Paneling data with TxID:%s doesn't exist, please do PanelRequest first.\n", txID)
+		return shim.Error(fmt.Sprintf("Paneling data with TxID:%s doesn't exist, please do PanelRequest first.", txID))
+	}
+
+	var genderProvider_P *GenderProvider
+	for i := 0; i < len(dataJSON.Providers.GenderProviderArray) ; i++ {
+		if providerId == dataJSON.Providers.GenderProviderArray[i].ProviderId {
+			genderProvider_P = &dataJSON.Providers.GenderProviderArray[i]
+		}
+	}
+
+	if genderProvider_P == nil {
+		fmt.Sprintf("Current owner:%s is not a provider in Paneling data which has txID:%s.\n", providerId, txID)
+		return shim.Error(fmt.Sprintf("Current owner:%s is not a provider in Paneling data which has txID:%s.", providerId, txID))
+	}
+
+	for i := 2; i < len(args); i++ {
+		list := strings.Split(args[i], "|")
+		if len(list) != 4 {
+			return shim.Error(strconv.Itoa(i) + "th argument must be combined by: Tag|Field|LineCount|HLL")
+		}
+		tag := strings.ToLower(list[0])
+		field := strings.ToLower(list[1])
+		lineCount, err := strconv.Atoi(list[2])
+		if err != nil {
+			return shim.Error(strconv.Itoa(i) + "th argument must contain a numeric string as lineCount.")
+		}
+		hll := strings.ToLower(list[3])
+		if tag == "gender" {
+			switch field {
+			case "male":
+				genderProvider_P.Gender.Male = DataDigest{lineCount, hll}
+			case "female":
+				genderProvider_P.Gender.Female = DataDigest{lineCount, hll}
+			case "all":
+				genderProvider_P.Gender.All = DataDigest{lineCount, hll}
+			default:
+				//should not go here
+				return shim.Error(strconv.Itoa(i) + "th argument must contain an existing field name.")
+			}
+		} else {
+			return shim.Error(strconv.Itoa(i) + "th argument must contain a valid tag.")
+		}
+
+	}
+
+	// === prepare the Paneling json ===
+	lastUpdatedTimestamp, err := getTxTimestamp(stub)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	dataJSON.LastUpdatedTimestamp = lastUpdatedTimestamp
+	dataJSON.IsFinished = isFinished
+
+	dataJSONasBytes, err := json.Marshal(dataJSON)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
+	// === Save data to state ===
+	operationType := function
+	key := operationType + "_" + txID
+	fmt.Printf("Starting PutState, key:%s, value:%s\n", key, string(dataJSONasBytes))
+	err = stub.PutState(key, dataJSONasBytes)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+	return shim.Success(nil)
+}
 
 
 func main() {
