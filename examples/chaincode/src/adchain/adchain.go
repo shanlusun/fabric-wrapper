@@ -143,6 +143,10 @@ func (t *AdChainChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response 
 		return t.OnBoarding(stub)
 	} else if function == "WhoAmI" {
 		return t.WhoAmI(stub)
+	} else if function == "PanelRequest" {
+		return t.PanelRequest(stub)
+	} else if function == "PanelUpdate" {
+		return t.PanelUpdate(stub)
 	}
 
 	return shim.Error("Received unknown function invocation")
@@ -345,7 +349,7 @@ func (t *AdChainChaincode) OnBoarding(stub shim.ChaincodeStubInterface) pb.Respo
 	//for step 1, get the tx_id of the transaction proposal, and this tx_id will be used as a tracking id until the matching step is finished.
 	var txID string = stub.GetTxID()
 	//if the TxID is passed from argument which means we need to reuse that TxID as desired, currently this only happens for paneling.
-	if len(args) >= 8 && len(args[8]) > 0 {
+	if len(args) > 8 && len(args[8]) > 0 {
 		txID = args[8]
 	}
 
@@ -403,8 +407,6 @@ func (t *AdChainChaincode) OnBoarding(stub shim.ChaincodeStubInterface) pb.Respo
 			return shim.Error(fmt.Sprintf("The targetOwner:%s doesn't have data:%s yet, please double check.", targetOwner, targetDataName))
 		}
 
-		//TODO:For paneling, we need to support multiple times onboarding. So remove the limitation of multiple onboarding temporarily.
-		//Also there is no action or notice for this scenario on front UI now. (Suppose to ask update panel dataName if the data is updated)
 		//for step 1, need to check whether the matching for these pair of data ever happened before, if Yes, just return with notice.
 		//define queryResult(but not queryResults), due to queryByStepAndOperationType will return only one single result.
 		queryResult, err := queryByStepAndOperationType(stub, operationType, false, 0, ownerId, dataName, targetOwner, targetDataName)
@@ -815,12 +817,12 @@ func getOrgNameAndCommonName(stub shim.ChaincodeStubInterface) (string, string, 
 // ============================================================================================================================
 func (t *AdChainChaincode) PanelRequest(stub shim.ChaincodeStubInterface) pb.Response {
 	function, args := stub.GetFunctionAndParameters()
-	//-------------6 parameters------------
+	//-------------4 parameters------------
 	//     0       		1       	 	  2		 			      3
 	// "DataType"  "DataName"   "ProviderId_1|ProviderId_2"     "Tag"
 
 	// ==== Input sanitation ====
-	if len(args) != 5 {
+	if len(args) != 4 {
 		return shim.Error("Incorrect number of arguments. Expecting 5 parameters for PanelRequest")
 	}
 	//if there is any empty string parameters, return err.
@@ -850,10 +852,10 @@ func (t *AdChainChaincode) PanelRequest(stub shim.ChaincodeStubInterface) pb.Res
 		return shim.Error("Incorrect Providers argument. Expecting 2 providerIds for PanelRequest")
 	}
 
-	//Providers should not be same one
-	if providerIdList[0] == providerIdList[1] {
-		return shim.Error("Incorrect Providers argument. Expecting 2 different providerIds for PanelRequest, now they are the same.")
-	}
+	////Providers should not be same one
+	//if providerIdList[0] == providerIdList[1] {
+	//	return shim.Error("Incorrect Providers argument. Expecting 2 different providerIds for PanelRequest, now they are the same.")
+	//}
 
 	//check whether the owner exists, whether providers exists
 	queryResults, err := queryByOwnerAndOperationType(stub, "OrgRegister", ownerId)
@@ -889,8 +891,8 @@ func (t *AdChainChaincode) PanelRequest(stub shim.ChaincodeStubInterface) pb.Res
 	//new object based on the tag, we might support other tags later here.
 	if tag == "gender" {
 		var genderProviderArray []GenderProvider
-		genderProviderArray[0] = GenderProvider{providerIdList[0], nil}
-		genderProviderArray[1] = GenderProvider{providerIdList[1], nil}
+		genderProviderArray = append(genderProviderArray, GenderProvider{providerIdList[0], Gender{}})
+		genderProviderArray = append(genderProviderArray, GenderProvider{providerIdList[1], Gender{}})
 		providers = Providers{genderProviderArray}
 	} else {
 		return shim.Error(fmt.Sprintf("Current tag:%s has not been supported yet.", tag))
@@ -965,7 +967,7 @@ func queryByTxIDAndOperationType(stub shim.ChaincodeStubInterface, operationType
 // If the PanelRequest is already finished before, nothing will happen here.
 // ============================================================================================================================
 func (t *AdChainChaincode) PanelUpdate(stub shim.ChaincodeStubInterface) pb.Response {
-	function, args := stub.GetFunctionAndParameters()
+	_, args := stub.GetFunctionAndParameters()
 	//-------------6 parameters------------
 	//     0       		1       	        2		 	                   3			                 4
 	//   "TxID"	    "IsFinished"  "Tag|Field|LineCount|HLL"     "Tag|Field|LineCount|HLL"       ...(add as many as we have)
@@ -1071,8 +1073,7 @@ func (t *AdChainChaincode) PanelUpdate(stub shim.ChaincodeStubInterface) pb.Resp
 	}
 
 	// === Save data to state ===
-	operationType := function
-	key := operationType + "_" + txID
+	key := "PanelRequest" + "_" + txID
 	fmt.Printf("Starting PutState, key:%s, value:%s\n", key, string(dataJSONasBytes))
 	err = stub.PutState(key, dataJSONasBytes)
 	if err != nil {
