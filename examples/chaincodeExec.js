@@ -12,76 +12,65 @@ const getChain = require('./getChain');
     console.log(decoded.payloads);
   });
 
-  console.log('Write to ledger for key "ab" & "bc": ');
-    await chain.invokeChaincode({
-      name: 'fcw_example',
-      fcn: 'write',
-      args: ['ab', JSON.stringify({ a: 2 })]
-    })
+  console.log('Write to ledger: ');
 
     await chain.invokeChaincode({
-      name: 'fcw_example',
-      fcn: 'write',
-      args: ['bc', JSON.stringify({ a: { '$inc': 100 }, b:"hello"})]
-    })
-
-    await chain.invokeChaincode({
-        name: 'fcw_example',
+        name: 'adchain',
         fcn: 'OrgRegister',
         args: []
     })
 
     await chain.invokeChaincode({
-        name: 'fcw_example',
+        name: 'adchain',
         fcn: 'DataRegister',
         args: ["imei", "TestFileName", "100", "", ""]
     })
     await chain.invokeChaincode({
-        name: 'fcw_example',
+        name: 'adchain',
         fcn: 'DataRegister',
         args: ["imei", "TestFileName2", "100", "", ""]
     }),
     await chain.invokeChaincode({
-        name: 'fcw_example',
+        name: 'adchain',
         fcn: 'OnBoarding',
-        args: ["4", "eccd405a6833518aea9b27f7b4be78b0", "TestFileName", "10", "eccd405a6833518aea9b27f7b4be78b0", "TestFileName2", "true", "TestURI"]
+        args: ["1", "eccd405a6833518aea9b27f7b4be78b0", "TestFileName", "10", "eccd405a6833518aea9b27f7b4be78b0", "TestFileName2", "true", "TestURI"]
     })
 
+  //new added for paneling
+  await chain.invokeChaincode({
+    name: 'adchain',
+    fcn: 'DataRegister',
+    args: ["imei", "TestFileName3", "100", "", "", "gender", "male"]
+  }),
+  await chain.invokeChaincode({
+    name: 'adchain',
+    fcn: 'PanelRequest',
+    args: ["imei", "TestFileName", "eccd405a6833518aea9b27f7b4be78b0|eccd405a6833518aea9b27f7b4be78b0", "gender"]
+  })
 
-  console.log('Read from ledger for key "ab": ');
-  console.log((await chain.queryByChaincode({
-    name: 'fcw_example',
-    fcn: 'read',
-    args: ['ab']
-  })).map(b => b.toString()));
-
-  console.log('Read from ledger for key "bc": ');
-  console.log((await chain.queryByChaincode({
-    name: 'fcw_example',
-    fcn: 'read',
-    args: ['bc']
-  })).map(b => b.toString()));
+  // await chain.invokeChaincode({
+  //   name: 'adchain',
+  //   fcn: 'PanelUpdate',
+  //   args: ["ad1a966ddf64d2b5d2962a7b342e0b68001c5c482cbc4ad739171c60189ae520", "true", "gender|male|10|testHLL_URI_1", "gender|female|11|testHLL_URI_2", "gender|all|12|testHLL_URI_3"]
+  // })
 
   console.log('Query from ledger: ');
-  console.log((await chain.queryByChaincode({
-      name: 'fcw_example',
-      fcn: 'Query',
-      args: [JSON.stringify({ selector:{ a: 2 }})]
-  })).map(b => b.toString()));
-
 
   console.log('Test for Query(): ');
     console.log((await chain.queryByChaincode({
-        name: 'fcw_example',
+        name: 'adchain',
         fcn: 'Query',
         args: [JSON.stringify({ selector:{ owner: "eccd405a6833518aea9b27f7b4be78b0" }})]
     })).map(b => b.toString()));
 
     console.log('Test for WhoAmI(): ');
     console.log((await chain.queryByChaincode({
-        name: 'fcw_example',
+        name: 'adchain',
         fcn: 'WhoAmI',
         args: []
     })).map(b => b.toString()));
+
+  //new added for paneling
+
 
 })();

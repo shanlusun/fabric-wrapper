@@ -1,14 +1,14 @@
 version: '2'
 
 services:
-  ca:
-    image: hyperledger/fabric-ca
-    container_name: ca
-    hostname: ca
-    ports:
-      - "8888:8888"
-      - "7054:7054"
-    command: fabric-ca-server start -b admin:adminpw
+#  ca:
+#    image: hyperledger/fabric-ca
+#    container_name: ca
+#    hostname: ca
+#    ports:
+#      - "8888:8888"
+#      - "7054:7054"
+#    command: fabric-ca-server start -b admin:adminpw
 
   orderer.example.com:
     extends:

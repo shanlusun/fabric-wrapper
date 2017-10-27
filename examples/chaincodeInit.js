@@ -4,21 +4,23 @@ const getChain = require('./getChain');
   const chain = await getChain();
 
   console.log('Install cc: ', await chain.installChaincode({
-    path: 'chaincode/src/fcw_example',
+    path: 'chaincode/src/adchain',
     version: 'v0'
   }));
 
   console.log('Instantiate cc: ', await chain.instantiateChaincode({
     chain: 'ttl',
-    path: 'chaincode/src/fcw_example',
+    path: 'chaincode/src/adchain',
     version: 'v0',
     args: ['100']
   }));
 
-  console.log('Read from ledger for key "abc": ');
-  console.log((await chain.queryByChaincode({
-    name: 'fcw_example',
-    fcn: 'read',
-    args: ['abc']
-  })).map(b => b.toString()));
+  console.log('Instantiate cc success!');
+
+  // console.log('Read from ledger for key "abc": ');
+  // console.log((await chain.queryByChaincode({
+  //   name: 'adchain',
+  //   fcn: 'read',
+  //   args: ['abc']
+  // })).map(b => b.toString()));
 })();

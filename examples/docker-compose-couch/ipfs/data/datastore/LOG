@@ -1,0 +1,38 @@
+=============== Aug 22, 2017 (UTC) ===============
+08:44:10.944170 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+08:44:10.948189 db@open opening
+08:44:10.949566 version@stat F·[] S·0B[] Sc·[]
+08:44:10.950144 syncDir: sync /data/ipfs/datastore: invalid argument
+=============== Aug 22, 2017 (UTC) ===============
+08:44:49.283557 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+08:44:49.284519 version@stat F·[] S·0B[] Sc·[]
+08:44:49.284602 db@open opening
+08:44:49.284901 journal@recovery F·1
+08:44:49.285194 journal@recovery recovering @1
+08:44:49.287924 version@stat F·[] S·0B[] Sc·[]
+08:44:49.293926 db@janitor F·2 G·0
+08:44:49.293994 db@open done T·9.342028ms
+08:44:49.303784 db@close closing
+08:44:49.304413 db@close done T·627.326µs
+=============== Aug 22, 2017 (UTC) ===============
+09:06:13.410543 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+09:06:13.411516 version@stat F·[] S·0B[] Sc·[]
+09:06:13.411594 db@open opening
+09:06:13.411871 journal@recovery F·1
+09:06:13.412165 journal@recovery recovering @2
+09:06:13.413917 version@stat F·[] S·0B[] Sc·[]
+09:06:13.419503 db@janitor F·2 G·0
+09:06:13.419741 db@open done T·8.124701ms
+09:06:13.426498 db@close closing
+09:06:13.426977 db@close done T·478.099µs
+=============== Aug 22, 2017 (UTC) ===============
+09:13:55.388902 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+09:13:55.389991 version@stat F·[] S·0B[] Sc·[]
+09:13:55.390069 db@open opening
+09:13:55.390409 journal@recovery F·1
+09:13:55.391632 journal@recovery recovering @4
+09:13:55.393878 version@stat F·[] S·0B[] Sc·[]
+09:13:55.398747 db@janitor F·2 G·0
+09:13:55.398804 db@open done T·8.698071ms
+09:13:55.404951 db@close closing
+09:13:55.405351 db@close done T·398.687µs

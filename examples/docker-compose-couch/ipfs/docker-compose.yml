@@ -1,0 +1,15 @@
+version: '2.0'
+
+services:
+  chainclient:
+    container_name: ipfs
+    image: ipfs/go-ipfs
+    tty: true
+    hostname: ipfs_host
+    volumes:
+        - ./export:/export
+        - ./data:/data/ipfs
+    ports:
+        - 8080:8080
+        - 4001:4001
+        - 5001:5001
